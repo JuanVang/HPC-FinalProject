@@ -1,0 +1,23 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%post
+    apt-get update && \
+    apt-get install -y build-essential openmpi-bin libopenmpi-dev
+    # OpenMP viene incluido con g++
+
+%files
+    gol_serial.cpp
+    gol_omp.cpp
+    gol_mpi_omp.cpp
+
+%post
+    g++ -O3 -o /gol_serial /gol_serial.cpp
+    g++ -O3 -fopenmp -o /gol_omp /gol_omp.cpp
+    mpic++ -O3 -fopenmp -o /gol_mpi_omp /gol_mpi_omp.cpp
+
+%environment
+    export OMP_NUM_THREADS=1
+
+%runscript
+    echo "Contenedor listo. Ejecuta los binarios manualmente con srun, mpirun o apptainer exec." 

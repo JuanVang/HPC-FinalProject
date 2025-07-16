@@ -1,7 +1,15 @@
+// ============================================================================
+// JUEGO DE LA VIDA - IMPLEMENTACIÓN SECUENCIAL
+// ============================================================================
+// Este código implementa el juego de la vida de forma secuencial (sin paralelismo)
+// ============================================================================
+
 #include <iostream>
 #include <vector>
 #include <chrono>
 #include <thread>
+#include <cstdlib>
+#include <ctime>
 
 // ============================================================================
 // CONFIGURACIÓN GLOBAL DEL JUEGO
@@ -11,6 +19,7 @@ const int COLS = 40;        // Número de columnas del tablero
 const int GENERATIONS = 1000; // Número total de generaciones a simular
 const char ALIVE = 'O';     // Carácter para representar células vivas
 const char DEAD = ' ';      // Carácter para representar células muertas
+const int SEED = 42;        // Semilla fija para inicialización reproducible
 
 // ============================================================================
 // FUNCIÓN PARA VISUALIZAR EL TABLERO EN CONSOLA
@@ -77,19 +86,21 @@ std::vector<std::vector<int>> nextGeneration(const std::vector<std::vector<int>>
 }
 
 // ============================================================================
-// FUNCIÓN PARA INICIALIZAR EL TABLERO CON UN PATRÓN ESPECÍFICO
+// FUNCIÓN PARA INICIALIZAR EL TABLERO CON VALORES ALEATORIOS REPRODUCIBLES
 // ============================================================================
 std::vector<std::vector<int>> initializeBoard() {
+    // Inicializa el generador de números aleatorios con semilla fija
+    srand(SEED);
+    
     // Crea un tablero vacío (todas las células muertas)
     std::vector<std::vector<int>> board(ROWS, std::vector<int>(COLS, 0));
     
-    // Configura un "glider" (planeador) - un patrón que se mueve diagonalmente
-    // El glider es un patrón clásico del juego de la vida que se desplaza
-    board[1][2] = 1;  // Primera fila del glider
-    board[2][3] = 1;  // Segunda fila del glider
-    board[3][1] = 1;  // Tercera fila del glider
-    board[3][2] = 1;  // (parte izquierda)
-    board[3][3] = 1;  // (parte derecha)
+    // Inicializa el tablero con valores aleatorios (0 o 1, 20% vivas)
+    for (int i = 0; i < ROWS; ++i) {
+        for (int j = 0; j < COLS; ++j) {
+            board[i][j] = (rand() % 100 < 20) ? 1 : 0;  // 20% probabilidad de estar viva
+        }
+    }
     
     return board;
 }
@@ -98,7 +109,7 @@ std::vector<std::vector<int>> initializeBoard() {
 // FUNCIÓN PRINCIPAL - SIMULACIÓN DEL JUEGO
 // ============================================================================
 int main() {
-    // Inicializa el tablero con el patrón glider
+    // Inicializa el tablero con valores aleatorios reproducibles
     auto board = initializeBoard();
 
     // Bucle principal: simula cada generación
@@ -117,4 +128,4 @@ int main() {
     }
 
     return 0;
-}
+} 

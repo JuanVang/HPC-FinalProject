@@ -19,6 +19,7 @@
 // ============================================================================
 #define ALIVE 1    // Valor que representa una célula viva
 #define DEAD  0    // Valor que representa una célula muerta
+#define SEED 42    // Semilla fija para inicialización reproducible
 
 using namespace std;
 
@@ -45,15 +46,20 @@ int count_neighbors(const vector<int>& grid, int i, int j, int cols) {
 }
 
 // ============================================================================
-// FUNCIÓN PARA INICIALIZAR EL GRID CON VALORES ALEATORIOS
+// FUNCIÓN PARA INICIALIZAR EL GRID CON VALORES ALEATORIOS REPRODUCIBLES
 // ============================================================================
-void initialize_grid(vector<int>& grid, int local_rows, int cols) {
+void initialize_grid(vector<int>& grid, int local_rows, int cols, int rank) {
     int total_cols = cols + 2;  // +2 para incluir las columnas de borde
+    
+    // Inicializa el generador de números aleatorios con semilla fija
+    // Usamos la semilla base + rank para que cada proceso tenga una secuencia diferente
+    // pero reproducible
+    srand(SEED + rank);
     
     // Inicializa solo las células internas (no los bordes)
     for (int i = 1; i <= local_rows; ++i)
         for (int j = 1; j <= cols; ++j)
-            grid[idx(i, j, total_cols)] = rand() % 2;  // 0 o 1 aleatoriamente
+            grid[idx(i, j, total_cols)] = (rand() % 100 < 20) ? 1 : 0;  // 20% probabilidad de estar viva
 }
 
 // ============================================================================
@@ -61,7 +67,6 @@ void initialize_grid(vector<int>& grid, int local_rows, int cols) {
 // ============================================================================
 void copy_grid(vector<int>& dest, const vector<int>& src, int local_rows, int cols) {
     int total_cols = cols + 2;
-    
     // Directiva OpenMP para paralelizar el bucle anidado
     // collapse(2) permite que OpenMP distribuya las iteraciones de ambos bucles
     #pragma omp parallel for collapse(2)
@@ -75,7 +80,6 @@ void copy_grid(vector<int>& dest, const vector<int>& src, int local_rows, int co
 // ============================================================================
 void gather_and_print_global_grid(const vector<int>& local_grid, int local_rows, int cols, int total_cols, int rank, int size, int step) {
     vector<int> global_grid;
-    
     // Solo el proceso 0 necesita el grid completo para mostrar
     if (rank == 0) global_grid.resize((local_rows * size) * cols);
 
@@ -133,9 +137,6 @@ int main(int argc, char** argv) {
     int total_cols = cols + 2;     // +2 para columnas de borde izquierda y derecha
     int total_rows = local_rows + 2; // +2 para filas de borde superior e inferior
 
-    // Inicializa generador de números aleatorios (diferente semilla por proceso)
-    srand(time(0) + rank);
-
     // ============================================================================
     // INICIALIZACIÓN DE BUFFERS
     // ============================================================================
@@ -144,8 +145,8 @@ int main(int argc, char** argv) {
     vector<int> current(total_rows * total_cols, DEAD);  // Grid actual
     vector<int> next(total_rows * total_cols, DEAD);     // Grid siguiente
 
-    // Inicializa el grid con valores aleatorios
-    initialize_grid(current, local_rows, cols);
+    // Inicializa el grid con valores aleatorios reproducibles
+    initialize_grid(current, local_rows, cols, rank);
 
     // ============================================================================
     // CONFIGURACIÓN DE COMUNICACIÓN MPI
@@ -158,11 +159,9 @@ int main(int argc, char** argv) {
     // BUCLE PRINCIPAL DE SIMULACIÓN
     // ============================================================================
     for (int step = 0; step < steps; ++step) {
-        
         // ========================================================================
         // FASE 1: COMUNICACIÓN MPI - INTERCAMBIO DE BORDES
         // ========================================================================
-        
         // Envía la primera fila de datos al proceso superior y recibe del inferior
         MPI_Sendrecv(&current[idx(1, 1, total_cols)], cols, MPI_INT, up, 0,
                      &current[idx(local_rows + 1, 1, total_cols)], cols, MPI_INT, down, 0,
@@ -192,10 +191,8 @@ int main(int argc, char** argv) {
             for (int j = 1; j <= cols; ++j) {
                 // Cuenta vecinos vivos
                 int alive_neighbors = count_neighbors(current, i, j, total_cols);
-                
                 // Referencia a la celda en el grid de la siguiente generación
                 int& cell = next[idx(i, j, total_cols)];
-                
                 // Aplica las reglas del juego de la vida
                 if (current[idx(i, j, total_cols)] == ALIVE) {
                     // Célula viva: sobrevive si tiene 2 o 3 vecinos vivos
@@ -212,7 +209,6 @@ int main(int argc, char** argv) {
         // ========================================================================
         // Copia el grid de la siguiente generación al grid actual
         copy_grid(current, next, local_rows, cols);
-        
         // Recolecta y muestra el estado global del tablero
         gather_and_print_global_grid(current, local_rows, cols, total_cols, rank, size, step);
     }
