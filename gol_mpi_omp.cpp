@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <unistd.h> // para usleep
+#include <string>
 
 // ============================================================================
 // CONSTANTES Y DEFINICIONES
@@ -115,49 +116,35 @@ int main(int argc, char** argv) {
     // Inicializa MPI
     MPI_Init(&argc, &argv);
 
-    // Obtiene información del proceso actual y del comunicador
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);  // ID del proceso actual (0, 1, 2, ...)
-    MPI_Comm_size(MPI_COMM_WORLD, &size);  // Número total de procesos
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // Verifica argumentos de línea de comandos
-    if (argc != 4) {
-        if (rank == 0) cout << "Uso: " << argv[0] << " filas columnas pasos\n";
-        MPI_Finalize();
-        return 1;
+    int rows = 10, cols = 10, steps = 10;
+    bool print = false;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--print") print = true;
+        else if (i + 2 < argc) {
+            rows = std::stoi(argv[i]);
+            cols = std::stoi(argv[i+1]);
+            steps = std::stoi(argv[i+2]);
+            i += 2;
+        }
     }
+    int local_rows = rows / size;
+    int total_cols = cols + 2;
+    int total_rows = local_rows + 2;
 
-    // Parsea argumentos de línea de comandos
-    int rows = atoi(argv[1]);      // Número total de filas
-    int cols = atoi(argv[2]);      // Número de columnas
-    int steps = atoi(argv[3]);     // Número de pasos/generaciones
-    int local_rows = rows / size;  // Filas por proceso (división equitativa)
-
-    // Calcula dimensiones incluyendo bordes (ghost cells)
-    int total_cols = cols + 2;     // +2 para columnas de borde izquierda y derecha
-    int total_rows = local_rows + 2; // +2 para filas de borde superior e inferior
-
-    // ============================================================================
-    // INICIALIZACIÓN DE BUFFERS
-    // ============================================================================
-    // Crea dos buffers: uno para la generación actual y otro para la siguiente
-    // Esto evita sobrescribir datos mientras se calcula la nueva generación
-    vector<int> current(total_rows * total_cols, DEAD);  // Grid actual
-    vector<int> next(total_rows * total_cols, DEAD);     // Grid siguiente
-
-    // Inicializa el grid con valores aleatorios reproducibles
+    vector<int> current(total_rows * total_cols, DEAD);
+    vector<int> next(total_rows * total_cols, DEAD);
     initialize_grid(current, local_rows, cols, rank);
 
-    // ============================================================================
-    // CONFIGURACIÓN DE COMUNICACIÓN MPI
-    // ============================================================================
-    // Calcula los IDs de los procesos vecinos (topología en anillo)
-    int up = (rank - 1 + size) % size;    // Proceso superior (con wraparound)
-    int down = (rank + 1) % size;         // Proceso inferior (con wraparound)
+    int up = (rank - 1 + size) % size;
+    int down = (rank + 1) % size;
 
-    // ============================================================================
-    // BUCLE PRINCIPAL DE SIMULACIÓN
-    // ============================================================================
+    double t0 = 0, t1 = 0;
+    if (rank == 0) t0 = omp_get_wtime();
     for (int step = 0; step < steps; ++step) {
         // ========================================================================
         // FASE 1: COMUNICACIÓN MPI - INTERCAMBIO DE BORDES
@@ -209,11 +196,12 @@ int main(int argc, char** argv) {
         // ========================================================================
         // Copia el grid de la siguiente generación al grid actual
         copy_grid(current, next, local_rows, cols);
-        // Recolecta y muestra el estado global del tablero
-        gather_and_print_global_grid(current, local_rows, cols, total_cols, rank, size, step);
+        if (print) gather_and_print_global_grid(current, local_rows, cols, total_cols, rank, size, step);
     }
-
-    // Finaliza MPI
+    if (rank == 0) {
+        t1 = omp_get_wtime();
+        std::cout << "Tiempo de simulación: " << (t1-t0) << " segundos\n";
+    }
     MPI_Finalize();
     return 0;
 }

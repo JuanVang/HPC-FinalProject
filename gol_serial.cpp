@@ -10,13 +10,11 @@
 #include <thread>
 #include <cstdlib>
 #include <ctime>
+#include <omp.h>
 
 // ============================================================================
 // CONFIGURACIÓN GLOBAL DEL JUEGO
 // ============================================================================
-const int ROWS = 20;        // Número de filas del tablero
-const int COLS = 40;        // Número de columnas del tablero
-const int GENERATIONS = 1000; // Número total de generaciones a simular
 const char ALIVE = 'O';     // Carácter para representar células vivas
 const char DEAD = ' ';      // Carácter para representar células muertas
 const int SEED = 42;        // Semilla fija para inicialización reproducible
@@ -24,16 +22,16 @@ const int SEED = 42;        // Semilla fija para inicialización reproducible
 // ============================================================================
 // FUNCIÓN PARA VISUALIZAR EL TABLERO EN CONSOLA
 // ============================================================================
-void printBoard(const std::vector<std::vector<int>>& board) {
+void printBoard(const std::vector<std::vector<int>>& board, int rows, int cols) {
     // Limpia la pantalla de la consola para mostrar la nueva generación
     system("clear"); // Cambia a "cls" si estás en Windows
     
     // Itera sobre cada fila del tablero
-    for (const auto& row : board) {
+    for (int i = 0; i < rows; ++i) {
         // Itera sobre cada celda en la fila actual
-        for (int cell : row) {
+        for (int j = 0; j < cols; ++j) {
             // Imprime 'O' si la celda está viva (valor 1), espacio en blanco si está muerta (valor 0)
-            std::cout << (cell ? ALIVE : DEAD);
+            std::cout << (board[i][j] ? ALIVE : DEAD);
         }
         std::cout << "\n"; // Nueva línea al final de cada fila
     }
@@ -42,7 +40,7 @@ void printBoard(const std::vector<std::vector<int>>& board) {
 // ============================================================================
 // FUNCIÓN PARA CONTAR VECINOS VIVOS DE UNA CÉLULA
 // ============================================================================
-int countLiveNeighbors(const std::vector<std::vector<int>>& board, int x, int y) {
+int countLiveNeighbors(const std::vector<std::vector<int>>& board, int x, int y, int rows, int cols) {
     int count = 0;
     
     // Itera sobre las 8 posiciones vecinas (3x3 grid centrado en la celda)
@@ -54,7 +52,7 @@ int countLiveNeighbors(const std::vector<std::vector<int>>& board, int x, int y)
                 int ny = y + dy;
                 
                 // Verifica que el vecino esté dentro de los límites del tablero
-                if (nx >= 0 && nx < ROWS && ny >= 0 && ny < COLS)
+                if (nx >= 0 && nx < rows && ny >= 0 && ny < cols)
                     count += board[nx][ny]; // Suma 1 si está vivo, 0 si está muerto
             }
     return count;
@@ -63,22 +61,14 @@ int countLiveNeighbors(const std::vector<std::vector<int>>& board, int x, int y)
 // ============================================================================
 // FUNCIÓN PARA CALCULAR LA SIGUIENTE GENERACIÓN
 // ============================================================================
-std::vector<std::vector<int>> nextGeneration(const std::vector<std::vector<int>>& board) {
-    // Crea una copia del tablero actual para almacenar la nueva generación
+std::vector<std::vector<int>> nextGeneration(const std::vector<std::vector<int>>& board, int rows, int cols) {
     std::vector<std::vector<int>> newBoard = board;
-    
-    // Itera sobre cada celda del tablero
-    for (int i = 0; i < ROWS; ++i)
-        for (int j = 0; j < COLS; ++j) {
-            // Cuenta cuántos vecinos vivos tiene la celda actual
-            int liveNeighbors = countLiveNeighbors(board, i, j);
-            
-            // Aplica las reglas del juego de la vida:
+    for (int i = 0; i < rows; ++i)
+        for (int j = 0; j < cols; ++j) {
+            int liveNeighbors = countLiveNeighbors(board, i, j, rows, cols);
             if (board[i][j] == 1) {
-                // Célula viva: sobrevive si tiene 2 o 3 vecinos vivos
                 newBoard[i][j] = (liveNeighbors == 2 || liveNeighbors == 3) ? 1 : 0;
             } else {
-                // Célula muerta: nace si tiene exactamente 3 vecinos vivos
                 newBoard[i][j] = (liveNeighbors == 3) ? 1 : 0;
             }
         }
@@ -88,16 +78,16 @@ std::vector<std::vector<int>> nextGeneration(const std::vector<std::vector<int>>
 // ============================================================================
 // FUNCIÓN PARA INICIALIZAR EL TABLERO CON VALORES ALEATORIOS REPRODUCIBLES
 // ============================================================================
-std::vector<std::vector<int>> initializeBoard() {
+std::vector<std::vector<int>> initializeBoard(int rows, int cols) {
     // Inicializa el generador de números aleatorios con semilla fija
     srand(SEED);
     
     // Crea un tablero vacío (todas las células muertas)
-    std::vector<std::vector<int>> board(ROWS, std::vector<int>(COLS, 0));
+    std::vector<std::vector<int>> board(rows, std::vector<int>(cols, 0));
     
     // Inicializa el tablero con valores aleatorios (0 o 1, 20% vivas)
-    for (int i = 0; i < ROWS; ++i) {
-        for (int j = 0; j < COLS; ++j) {
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
             board[i][j] = (rand() % 100 < 20) ? 1 : 0;  // 20% probabilidad de estar viva
         }
     }
@@ -108,24 +98,36 @@ std::vector<std::vector<int>> initializeBoard() {
 // ============================================================================
 // FUNCIÓN PRINCIPAL - SIMULACIÓN DEL JUEGO
 // ============================================================================
-int main() {
+int main(int argc, char* argv[]) {
     // Inicializa el tablero con valores aleatorios reproducibles
-    auto board = initializeBoard();
-
+    int rows = 10, cols = 10, generations = 10;
+    bool print = false;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--print") print = true;
+        else if (i + 2 < argc) {
+            rows = std::stoi(argv[i]);
+            cols = std::stoi(argv[i+1]);
+            generations = std::stoi(argv[i+2]);
+            i += 2;
+        }
+    }
+    auto board = initializeBoard(rows, cols);
+    double t0 = omp_get_wtime();
     // Bucle principal: simula cada generación
-    for (int gen = 0; gen < GENERATIONS; ++gen) {
+    for (int gen = 0; gen < generations; ++gen) {
         // Muestra el número de la generación actual
-        std::cout << "Generación: " << gen << "\n";
-        
-        // Visualiza el estado actual del tablero
-        printBoard(board);
+        if (print) {
+            std::cout << "Generación: " << gen << "\n";
+            printBoard(board, rows, cols);
+            // Pausa de 200ms para hacer la visualización más lenta y observable
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
         
         // Calcula y actualiza el tablero para la siguiente generación
-        board = nextGeneration(board);
-        
-        // Pausa de 200ms para hacer la visualización más lenta y observable
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        board = nextGeneration(board, rows, cols);
     }
-
+    double t1 = omp_get_wtime();
+    std::cout << "Tiempo de simulación: " << (t1-t0) << " segundos\n";
     return 0;
 } 

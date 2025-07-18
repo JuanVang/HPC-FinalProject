@@ -13,45 +13,39 @@
 #include <cstdlib>
 #include <ctime>
 
-const int ROWS = 20;        // Número de filas del tablero
-const int COLS = 40;        // Número de columnas del tablero
-const int GENERATIONS = 1000; // Número total de generaciones a simular
-const char ALIVE = 'O';     // Carácter para representar células vivas
-const char DEAD = ' ';      // Carácter para representar células muertas
-const int SEED = 42;        // Semilla fija para inicialización reproducible
+const char ALIVE = 'O';
+const char DEAD = ' ';
+const int SEED = 42;
 
-// Imprime el tablero en consola
-void printBoard(const std::vector<std::vector<int>>& board) {
-    system("clear"); // Cambia a "cls" si estás en Windows
-    for (const auto& row : board) {
-        for (int cell : row) {
-            std::cout << (cell ? ALIVE : DEAD);
+void printBoard(const std::vector<std::vector<int>>& board, int rows, int cols) {
+    system("clear");
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            std::cout << (board[i][j] ? ALIVE : DEAD);
         }
         std::cout << "\n";
     }
 }
 
-// Cuenta los vecinos vivos de una celda
-int countLiveNeighbors(const std::vector<std::vector<int>>& board, int x, int y) {
+int countLiveNeighbors(const std::vector<std::vector<int>>& board, int x, int y, int rows, int cols) {
     int count = 0;
     for (int dx = -1; dx <= 1; ++dx)
         for (int dy = -1; dy <= 1; ++dy)
             if (!(dx == 0 && dy == 0)) {
                 int nx = x + dx;
                 int ny = y + dy;
-                if (nx >= 0 && nx < ROWS && ny >= 0 && ny < COLS)
+                if (nx >= 0 && nx < rows && ny >= 0 && ny < cols)
                     count += board[nx][ny];
             }
     return count;
 }
 
-// Calcula la siguiente generación usando OpenMP
-std::vector<std::vector<int>> nextGeneration(const std::vector<std::vector<int>>& board) {
+std::vector<std::vector<int>> nextGeneration(const std::vector<std::vector<int>>& board, int rows, int cols) {
     std::vector<std::vector<int>> newBoard = board;
     #pragma omp parallel for collapse(2)
-    for (int i = 0; i < ROWS; ++i)
-        for (int j = 0; j < COLS; ++j) {
-            int liveNeighbors = countLiveNeighbors(board, i, j);
+    for (int i = 0; i < rows; ++i)
+        for (int j = 0; j < cols; ++j) {
+            int liveNeighbors = countLiveNeighbors(board, i, j, rows, cols);
             if (board[i][j] == 1) {
                 newBoard[i][j] = (liveNeighbors == 2 || liveNeighbors == 3) ? 1 : 0;
             } else {
@@ -61,31 +55,39 @@ std::vector<std::vector<int>> nextGeneration(const std::vector<std::vector<int>>
     return newBoard;
 }
 
-// Inicializa el tablero con valores aleatorios reproducibles
-std::vector<std::vector<int>> initializeBoard() {
-    // Inicializa el generador de números aleatorios con semilla fija
+std::vector<std::vector<int>> initializeBoard(int rows, int cols) {
     srand(SEED);
-    
-    // Crea un tablero vacío (todas las células muertas)
-    std::vector<std::vector<int>> board(ROWS, std::vector<int>(COLS, 0));
-    
-    // Inicializa el tablero con valores aleatorios (0 o 1, 20% vivas)
-    for (int i = 0; i < ROWS; ++i) {
-        for (int j = 0; j < COLS; ++j) {
-            board[i][j] = (rand() % 100 < 20) ? 1 : 0;  // 20% probabilidad de estar viva
-        }
-    }
-    
+    std::vector<std::vector<int>> board(rows, std::vector<int>(cols, 0));
+    for (int i = 0; i < rows; ++i)
+        for (int j = 0; j < cols; ++j)
+            board[i][j] = (rand() % 100 < 20) ? 1 : 0;
     return board;
 }
 
-int main() {
-    auto board = initializeBoard();
-    for (int gen = 0; gen < GENERATIONS; ++gen) {
-        std::cout << "Generación: " << gen << "\n";
-        printBoard(board);
-        board = nextGeneration(board);
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+int main(int argc, char* argv[]) {
+    int rows = 10, cols = 10, generations = 10;
+    bool print = false;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--print") print = true;
+        else if (i + 2 < argc) {
+            rows = std::stoi(argv[i]);
+            cols = std::stoi(argv[i+1]);
+            generations = std::stoi(argv[i+2]);
+            i += 2;
+        }
     }
+    auto board = initializeBoard(rows, cols);
+    double t0 = omp_get_wtime();
+    for (int gen = 0; gen < generations; ++gen) {
+        if (print) {
+            std::cout << "Generación: " << gen << "\n";
+            printBoard(board, rows, cols);
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+        board = nextGeneration(board, rows, cols);
+    }
+    double t1 = omp_get_wtime();
+    std::cout << "Tiempo de simulación: " << (t1-t0) << " segundos\n";
     return 0;
 } 
