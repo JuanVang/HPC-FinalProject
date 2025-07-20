@@ -10,7 +10,6 @@
 #include <thread>
 #include <cstdlib>
 #include <ctime>
-#include <omp.h>
 
 // ============================================================================
 // CONFIGURACIÓN GLOBAL DEL JUEGO
@@ -20,18 +19,26 @@ const char DEAD = ' ';      // Carácter para representar células muertas
 const int SEED = 42;        // Semilla fija para inicialización reproducible
 
 // ============================================================================
+// FUNCIÓN AUXILIAR PARA CALCULAR ÍNDICE EN ARRAY UNIDIMENSIONAL
+// ============================================================================
+// Convierte coordenadas 2D (i,j) a índice 1D en un array
+int idx(int i, int j, int cols) {
+    return i * cols + j;
+}
+
+// ============================================================================
 // FUNCIÓN PARA VISUALIZAR EL TABLERO EN CONSOLA
 // ============================================================================
-void printBoard(const std::vector<std::vector<int>>& board, int rows, int cols) {
+void printBoard(const std::vector<int>& board, int rows, int cols) {
     // Limpia la pantalla de la consola para mostrar la nueva generación
-    system("clear"); // Cambia a "cls" si estás en Windows
+    system("clear"); // Cambiar a "cls" en Windows 
     
     // Itera sobre cada fila del tablero
     for (int i = 0; i < rows; ++i) {
         // Itera sobre cada celda en la fila actual
         for (int j = 0; j < cols; ++j) {
             // Imprime 'O' si la celda está viva (valor 1), espacio en blanco si está muerta (valor 0)
-            std::cout << (board[i][j] ? ALIVE : DEAD);
+            std::cout << (board[idx(i, j, cols)] ? ALIVE : DEAD);
         }
         std::cout << "\n"; // Nueva línea al final de cada fila
     }
@@ -40,7 +47,7 @@ void printBoard(const std::vector<std::vector<int>>& board, int rows, int cols) 
 // ============================================================================
 // FUNCIÓN PARA CONTAR VECINOS VIVOS DE UNA CÉLULA
 // ============================================================================
-int countLiveNeighbors(const std::vector<std::vector<int>>& board, int x, int y, int rows, int cols) {
+int countLiveNeighbors(const std::vector<int>& board, int x, int y, int rows, int cols) {
     int count = 0;
     
     // Itera sobre las 8 posiciones vecinas (3x3 grid centrado en la celda)
@@ -53,7 +60,7 @@ int countLiveNeighbors(const std::vector<std::vector<int>>& board, int x, int y,
                 
                 // Verifica que el vecino esté dentro de los límites del tablero
                 if (nx >= 0 && nx < rows && ny >= 0 && ny < cols)
-                    count += board[nx][ny]; // Suma 1 si está vivo, 0 si está muerto
+                    count += board[idx(nx, ny, cols)]; // Suma 1 si está vivo, 0 si está muerto
             }
     return count;
 }
@@ -61,15 +68,15 @@ int countLiveNeighbors(const std::vector<std::vector<int>>& board, int x, int y,
 // ============================================================================
 // FUNCIÓN PARA CALCULAR LA SIGUIENTE GENERACIÓN
 // ============================================================================
-std::vector<std::vector<int>> nextGeneration(const std::vector<std::vector<int>>& board, int rows, int cols) {
-    std::vector<std::vector<int>> newBoard = board;
+std::vector<int> nextGeneration(const std::vector<int>& board, int rows, int cols) {
+    std::vector<int> newBoard = board;
     for (int i = 0; i < rows; ++i)
         for (int j = 0; j < cols; ++j) {
             int liveNeighbors = countLiveNeighbors(board, i, j, rows, cols);
-            if (board[i][j] == 1) {
-                newBoard[i][j] = (liveNeighbors == 2 || liveNeighbors == 3) ? 1 : 0;
+            if (board[idx(i, j, cols)] == 1) {
+                newBoard[idx(i, j, cols)] = (liveNeighbors == 2 || liveNeighbors == 3) ? 1 : 0;
             } else {
-                newBoard[i][j] = (liveNeighbors == 3) ? 1 : 0;
+                newBoard[idx(i, j, cols)] = (liveNeighbors == 3) ? 1 : 0;
             }
         }
     return newBoard;
@@ -78,17 +85,17 @@ std::vector<std::vector<int>> nextGeneration(const std::vector<std::vector<int>>
 // ============================================================================
 // FUNCIÓN PARA INICIALIZAR EL TABLERO CON VALORES ALEATORIOS REPRODUCIBLES
 // ============================================================================
-std::vector<std::vector<int>> initializeBoard(int rows, int cols) {
+std::vector<int> initializeBoard(int rows, int cols) {
     // Inicializa el generador de números aleatorios con semilla fija
     srand(SEED);
     
     // Crea un tablero vacío (todas las células muertas)
-    std::vector<std::vector<int>> board(rows, std::vector<int>(cols, 0));
+    std::vector<int> board(rows * cols, 0);
     
     // Inicializa el tablero con valores aleatorios (0 o 1, 20% vivas)
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
-            board[i][j] = (rand() % 100 < 20) ? 1 : 0;  // 20% probabilidad de estar viva
+            board[idx(i, j, cols)] = (rand() % 100 < 20) ? 1 : 0;  // 20% probabilidad de estar viva
         }
     }
     
@@ -113,7 +120,10 @@ int main(int argc, char* argv[]) {
         }
     }
     auto board = initializeBoard(rows, cols);
-    double t0 = omp_get_wtime();
+    
+    // Medición de tiempo usando std::chrono (sin dependencia de OpenMP)
+    auto t0 = std::chrono::high_resolution_clock::now();
+    
     // Bucle principal: simula cada generación
     for (int gen = 0; gen < generations; ++gen) {
         // Muestra el número de la generación actual
@@ -127,7 +137,9 @@ int main(int argc, char* argv[]) {
         // Calcula y actualiza el tablero para la siguiente generación
         board = nextGeneration(board, rows, cols);
     }
-    double t1 = omp_get_wtime();
-    std::cout << "Tiempo de simulación: " << (t1-t0) << " segundos\n";
+    
+    auto t1 = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0);
+    std::cout << "Tiempo de simulación: " << duration.count() / 1000000.0 << " segundos\n";
     return 0;
 } 
