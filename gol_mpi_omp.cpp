@@ -61,14 +61,13 @@ void print_global_grid(const vector<int>& local_grid, int local_rows, int cols, 
 }
 
 // Conteo de vecinos
-int count_neighbors(const vector<int>& grid, int i, int j, int total_cols, int local_rows, int cols) {
+int count_neighbors(const vector<int>& grid, int i, int j, int total_cols) {
     int count = 0;
     for (int dx = -1; dx <= 1; ++dx)
         for (int dy = -1; dy <= 1; ++dy)
             if (!(dx == 0 && dy == 0)) {
-                int ni = (i + dx + local_rows + 2) % (local_rows + 2); // incluye ghost rows
-                int nj = (j + dy + cols + 2) % (cols + 2); // incluye ghost cols
-                count += grid[idx(ni, nj, total_cols)];
+                // Acceso directo a ghost rows/columns, que ya contienen la información toroidal
+                count += grid[idx(i + dx, j + dy, total_cols)];
             }
     return count;
 }
@@ -156,7 +155,7 @@ int main(int argc, char** argv) {
         #pragma omp parallel for collapse(2)
         for (int i = 1; i <= local_rows; ++i) {
             for (int j = 1; j <= cols; ++j) {
-                int alive_neighbors = count_neighbors(current, i, j, total_cols, local_rows, cols);
+                int alive_neighbors = count_neighbors(current, i, j, total_cols);
                 int& cell = next[idx(i, j, total_cols)];
                 if (current[idx(i, j, total_cols)] == ALIVE)
                     cell = (alive_neighbors == 2 || alive_neighbors == 3) ? ALIVE : DEAD;
