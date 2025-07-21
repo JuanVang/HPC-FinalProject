@@ -4,8 +4,9 @@
 ROWS=1000
 COLS=1000
 GENS=100
-PROCS=4
-THREADS_LIST="1 2 4 8 16"
+PROCS_LIST="1 2 4"   # Prueba 1, 2 y 4 procesos
+THREADS_LIST="1 2 4 8" # Prueba 1, 2, 4, 8 hilos
+MAX_CORES=8           # Ajusta esto a tu máquina/nodo
 REPS=3
 CSV=benchmark_threads.csv
 
@@ -23,14 +24,19 @@ done
 T1=$(echo "$T1 / $REPS" | bc -l)
 echo "Tiempo serial promedio: $T1 s"
 
-# 2. MPI+OpenMP variando hilos
-echo "Ejecutando versión híbrida MPI+OpenMP con $PROCS procesos..."
-for threads in $THREADS_LIST; do
-    for rep in $(seq 1 $REPS); do
-        t=$(apptainer exec gol.sif mpirun -np $PROCS /gol_mpi_omp $ROWS $COLS $GENS --threads $threads 2>&1 | grep "Tiempo de simulación" | awk '{print $(NF-1)}')
-        speedup=$(echo "$T1 / $t" | bc -l)
-        efficiency=$(echo "$speedup / ($PROCS * $threads)" | bc -l)
-        echo "mpi_omp,$PROCS,$threads,$ROWS,$COLS,$GENS,$rep,$t,$speedup,$efficiency" >> $CSV
+# 2. MPI+OpenMP variando procesos e hilos
+echo "Ejecutando versión híbrida MPI+OpenMP..."
+for procs in $PROCS_LIST; do
+    for threads in $THREADS_LIST; do
+        total_cores=$((procs * threads))
+        if [ $total_cores -le $MAX_CORES ]; then
+            for rep in $(seq 1 $REPS); do
+                t=$(apptainer exec gol.sif mpirun -np $procs /gol_mpi_omp $ROWS $COLS $GENS --threads $threads 2>&1 | grep "Tiempo de simulación" | awk '{print $(NF-1)}')
+                speedup=$(echo "$T1 / $t" | bc -l)
+                efficiency=$(echo "$speedup / $total_cores" | bc -l)
+                echo "mpi_omp,$procs,$threads,$ROWS,$COLS,$GENS,$rep,$t,$speedup,$efficiency" >> $CSV
+            done
+        fi
     done
 done
 
