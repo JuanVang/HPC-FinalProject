@@ -6,12 +6,8 @@ COLS=1000
 GENS=100
 REPS=3
 CSV=benchmark_threads.csv
-
-# Combinaciones óptimas para 8 núcleos físicos
-COMBOS="1 8
-2 4
-4 2
-8 1"
+MAX_THREADS=16
+PROCS=2
 
 # Encabezado CSV
 echo "version,procs,threads,rows,cols,gens,run,time_sec,speedup,efficiency" > $CSV
@@ -31,9 +27,9 @@ done
 T1=$(echo "$T1 / $REPS" | bc -l)
 echo "Tiempo serial promedio: $T1 s"
 
-# 2. OpenMP pura (mismos hilos que en las combinaciones óptimas)
+# 2. OpenMP pura (threads 1 a 16)
 echo "Ejecutando versión OpenMP pura..."
-for threads in 8 4 2 1; do
+for threads in $(seq 1 $MAX_THREADS); do
     for rep in $(seq 1 $REPS); do
         t=$(apptainer exec gol.sif /gol_omp $ROWS $COLS $GENS --threads $threads 2>&1 | grep "Tiempo de simulación" | awk '{print $(NF-1)}')
         echo "[DEBUG] Tiempo medido para omp con $threads hilos, rep $rep: '$t'"
@@ -47,22 +43,21 @@ for threads in 8 4 2 1; do
     done
 done
 
-# 3. MPI+OpenMP solo combinaciones óptimas
-while read procs threads; do
-    if [ -z "$procs" ]; then continue; fi
-    echo "Ejecutando: $procs procesos, $threads hilos por proceso..."
+# 3. MPI+OpenMP con -np 2, threads 1 a 16
+echo "Ejecutando versión MPI+OpenMP con $PROCS procesos..."
+for threads in $(seq 1 $MAX_THREADS); do
     for rep in $(seq 1 $REPS); do
-        t=$(apptainer exec gol.sif mpirun -np $procs /gol_mpi_omp $ROWS $COLS $GENS --threads $threads 2>&1 | grep "Tiempo de simulación" | awk '{print $(NF-1)}')
-        echo "[DEBUG] Tiempo medido para mpi_omp con $procs procesos, $threads hilos, rep $rep: '$t'"
+        t=$(apptainer exec gol.sif mpirun -np $PROCS /gol_mpi_omp $ROWS $COLS $GENS --threads $threads 2>&1 | grep "Tiempo de simulación" | awk '{print $(NF-1)}')
+        echo "[DEBUG] Tiempo medido para mpi_omp con $PROCS procesos, $threads hilos, rep $rep: '$t'"
         if [ -z "$t" ]; then
-            echo "[WARN] Tiempo vacío para mpi_omp con $procs procesos, $threads hilos, rep $rep, saltando..."
+            echo "[WARN] Tiempo vacío para mpi_omp con $PROCS procesos, $threads hilos, rep $rep, saltando..."
             continue
         fi
-        total_cores=$((procs * threads))
+        total_cores=$((PROCS * threads))
         speedup=$(echo "$T1 / $t" | bc -l)
         efficiency=$(echo "$speedup / $total_cores" | bc -l)
-        echo "mpi_omp,$procs,$threads,$ROWS,$COLS,$GENS,$rep,$t,$speedup,$efficiency" >> $CSV
+        echo "mpi_omp,$PROCS,$threads,$ROWS,$COLS,$GENS,$rep,$t,$speedup,$efficiency" >> $CSV
     done
-done <<< "$COMBOS"
+done
 
 echo "\n¡Pruebas completadas! Resultados en $CSV" 
