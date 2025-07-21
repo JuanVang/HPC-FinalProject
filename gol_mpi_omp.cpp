@@ -206,6 +206,13 @@ int main(int argc, char** argv) {
             displs[i] = offset;
             offset += rows_for_process * cols;
         }
+        // Depuración: imprimir recvcounts y displs
+        std::cout << "[DEBUG] recvcounts: ";
+        for (int i = 0; i < size; ++i) std::cout << recvcounts[i] << " ";
+        std::cout << "\n[DEBUG] displs: ";
+        for (int i = 0; i < size; ++i) std::cout << displs[i] << " ";
+        std::cout << std::endl;
+        std::cout << "[DEBUG] global_grid size: " << global_grid.size() << std::endl;
     }
     vector<int> sendbuf(local_rows * cols);
     for (int i = 1; i <= local_rows; ++i)
