@@ -157,11 +157,21 @@ int main(int argc, char** argv) {
         MPI_Isend(&current[idx(local_rows, 1, total_cols)], cols, MPI_INT, down, 1, MPI_COMM_WORLD, &reqs[2]);
         MPI_Irecv(&current[idx(0, 1, total_cols)], cols, MPI_INT, up, 1, MPI_COMM_WORLD, &reqs[3]);
 
-        // XB. Ghost columns (periódicas)
+        // Esperar comunicación antes de calcular filas de borde
+        MPI_Waitall(4, reqs, MPI_STATUSES_IGNORE);
+
+        // XB. Ghost columns (periódicas) - MOVER AQUÍ
         #pragma omp parallel for
         for (int i = 0; i <= local_rows+1; ++i) {
             current[idx(i, 0, total_cols)] = current[idx(i, cols, total_cols)];
             current[idx(i, cols+1, total_cols)] = current[idx(i, 1, total_cols)];
+        }
+
+        // Depuración: imprimir subtablero local con ghost rows/columns
+        if (debug) {
+            MPI_Barrier(MPI_COMM_WORLD);
+            print_local_debug(current, local_rows, cols, total_cols, rank, step);
+            MPI_Barrier(MPI_COMM_WORLD);
         }
 
         // XC. Visualización
@@ -178,16 +188,6 @@ int main(int argc, char** argv) {
                 else
                     cell = (alive_neighbors == 3) ? ALIVE : DEAD;
             }
-        }
-
-        // Esperar comunicación antes de calcular filas de borde
-        MPI_Waitall(4, reqs, MPI_STATUSES_IGNORE);
-
-        // Depuración: imprimir subtablero local con ghost rows/columns
-        if (debug) {
-            MPI_Barrier(MPI_COMM_WORLD);
-            print_local_debug(current, local_rows, cols, total_cols, rank, step);
-            MPI_Barrier(MPI_COMM_WORLD);
         }
 
         // XE. Copiar next a current
