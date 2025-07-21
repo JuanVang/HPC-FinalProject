@@ -1,10 +1,10 @@
 // ============================================================================
-// JUEGO DE LA VIDA - IMPLEMENTACIÓN OpenMP 
+// JUEGO DE LA VIDA - IMPLEMENTACIÓN OpenMP (MEJORADA)
 // ============================================================================
 // Este código implementa el juego de la vida usando únicamente OpenMP para
 // paralelismo a nivel de hilos, sin comunicación entre procesos (sin MPI).
 // 
-// MEJORAS IMPLEMENTADAS DE LA VERSION ANTERIOR:
+// MEJORAS IMPLEMENTADAS:
 // 1. Optimización de cache (acceso por filas para mejor localidad)
 // 2. Medición de tiempo precisa con omp_get_wtime()
 // 3. Configuración optimizada de OpenMP (chunk size, scheduling)
@@ -23,17 +23,23 @@ const char ALIVE = 'O';
 const char DEAD = ' ';
 const int SEED = 42;
 
-void printBoard(const std::vector<std::vector<int>>& board, int rows, int cols) {
-    system("clear");
+// ============================================================================
+// FUNCIÓN AUXILIAR PARA CALCULAR ÍNDICE EN ARRAY UNIDIMENSIONAL
+// ============================================================================
+int idx(int i, int j, int cols) {
+    return i * cols + j;
+}
+
+void printBoard(const std::vector<int>& board, int rows, int cols) {
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
-            std::cout << (board[i][j] ? ALIVE : DEAD);
+            std::cout << (board[idx(i, j, cols)] ? ALIVE : DEAD);
         }
         std::cout << "\n";
     }
 }
 
-int countLiveNeighbors(const std::vector<std::vector<int>>& board, int x, int y, int rows, int cols) {
+int countLiveNeighbors(const std::vector<int>& board, int x, int y, int rows, int cols) {
     int count = 0;
     for (int dx = -1; dx <= 1; ++dx)
         for (int dy = -1; dy <= 1; ++dy)
@@ -41,13 +47,13 @@ int countLiveNeighbors(const std::vector<std::vector<int>>& board, int x, int y,
                 int nx = x + dx;
                 int ny = y + dy;
                 if (nx >= 0 && nx < rows && ny >= 0 && ny < cols)
-                    count += board[nx][ny];
+                    count += board[idx(nx, ny, cols)];
             }
     return count;
 }
 
-std::vector<std::vector<int>> nextGeneration(const std::vector<std::vector<int>>& board, int rows, int cols) {
-    std::vector<std::vector<int>> newBoard = board;
+std::vector<int> nextGeneration(const std::vector<int>& board, int rows, int cols) {
+    std::vector<int> newBoard = board;
     
     // Optimización: usar static scheduling con chunk size para mejor balance de carga
     // y reducir overhead de sincronización
@@ -55,24 +61,24 @@ std::vector<std::vector<int>> nextGeneration(const std::vector<std::vector<int>>
     for (int i = 0; i < rows; ++i)
         for (int j = 0; j < cols; ++j) {
             int liveNeighbors = countLiveNeighbors(board, i, j, rows, cols);
-            if (board[i][j] == 1) {
-                newBoard[i][j] = (liveNeighbors == 2 || liveNeighbors == 3) ? 1 : 0;
+            if (board[idx(i, j, cols)] == 1) {
+                newBoard[idx(i, j, cols)] = (liveNeighbors == 2 || liveNeighbors == 3) ? 1 : 0;
             } else {
-                newBoard[i][j] = (liveNeighbors == 3) ? 1 : 0;
+                newBoard[idx(i, j, cols)] = (liveNeighbors == 3) ? 1 : 0;
             }
         }
     return newBoard;
 }
 
-std::vector<std::vector<int>> initializeBoard(int rows, int cols) {
+std::vector<int> initializeBoard(int rows, int cols) {
     srand(SEED);
-    std::vector<std::vector<int>> board(rows, std::vector<int>(cols, 0));
+    std::vector<int> board(rows * cols, 0);
     
     // Paralelizar la inicialización para mejor rendimiento
     #pragma omp parallel for collapse(2) schedule(static, 16)
     for (int i = 0; i < rows; ++i)
         for (int j = 0; j < cols; ++j)
-            board[i][j] = (rand() % 100 < 20) ? 1 : 0;
+            board[idx(i, j, cols)] = (rand() % 100 < 20) ? 1 : 0;
     
     return board;
 }
@@ -121,7 +127,6 @@ int main(int argc, char* argv[]) {
         if (print) {
             std::cout << "Generación: " << gen << "\n";
             printBoard(board, rows, cols);
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
         }
         board = nextGeneration(board, rows, cols);
     }

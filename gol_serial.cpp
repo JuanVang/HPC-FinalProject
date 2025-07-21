@@ -15,7 +15,7 @@
 // CONFIGURACIÓN GLOBAL DEL JUEGO
 // ============================================================================
 const char ALIVE = 'O';     // Carácter para representar células vivas
-const char DEAD = ' ';      // Carácter para representar células muertas
+const char DEAD = ' ';      // Carácter para representar células muertas (espacio)
 const int SEED = 42;        // Semilla fija para inicialización reproducible
 
 // ============================================================================
@@ -30,9 +30,6 @@ int idx(int i, int j, int cols) {
 // FUNCIÓN PARA VISUALIZAR EL TABLERO EN CONSOLA
 // ============================================================================
 void printBoard(const std::vector<int>& board, int rows, int cols) {
-    // Limpia la pantalla de la consola para mostrar la nueva generación
-    system("clear"); // Cambiar a "cls" en Windows 
-    
     // Itera sobre cada fila del tablero
     for (int i = 0; i < rows; ++i) {
         // Itera sobre cada celda en la fila actual
@@ -130,8 +127,6 @@ int main(int argc, char* argv[]) {
         if (print) {
             std::cout << "Generación: " << gen << "\n";
             printBoard(board, rows, cols);
-            // Pausa de 200ms para hacer la visualización más lenta y observable
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
         }
         
         // Calcula y actualiza el tablero para la siguiente generación

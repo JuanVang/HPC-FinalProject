@@ -59,9 +59,8 @@ void initialize_grid(vector<int>& grid, int local_rows, int cols, int rank) {
     int total_cols = cols + 2;  // +2 para incluir las columnas de borde
     
     // Inicializa el generador de números aleatorios con semilla fija
-    // Usamos la semilla base + rank para que cada proceso tenga una secuencia diferente
-    // pero reproducible
-    srand(SEED + rank);
+    // TODOS los procesos usan la misma semilla para generar el mismo tablero
+    srand(SEED);
     
     // Inicializa solo las células internas (no los bordes)
     for (int i = 1; i <= local_rows; ++i)
@@ -133,12 +132,11 @@ void gather_and_print_global_grid(const vector<int>& local_grid, int local_rows,
         cout << "\n=== Paso " << step << " ===" << endl;
         for (int i = 0; i < total_rows; ++i) {
             for (int j = 0; j < cols; ++j) {
-                cout << (global_grid[i * cols + j] == ALIVE ? 'O' : '.');
+                cout << (global_grid[i * cols + j] == ALIVE ? 'O' : ' ');
             }
             cout << '\n';
         }
         cout << flush;
-        usleep(200000); // Pausa de 200ms para visualización
     }
 }
 
