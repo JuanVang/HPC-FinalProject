@@ -21,6 +21,10 @@ echo "Ejecutando versión serial..."
 T1=0
 for rep in $(seq 1 $REPS); do
     t=$(apptainer exec gol.sif /gol_serial $ROWS $COLS $GENS 2>&1 | grep "Tiempo de simulación" | awk '{print $(NF-1)}')
+    if [ -z "$t" ]; then
+        echo "[WARN] Tiempo vacío para serial, rep $rep, saltando..."
+        continue
+    fi
     echo "serial,1,1,$ROWS,$COLS,$GENS,$rep,$t,1,1" >> $CSV
     T1=$(echo "$T1 + $t" | bc)
 done
@@ -32,6 +36,11 @@ echo "Ejecutando versión OpenMP pura..."
 for threads in 8 4 2 1; do
     for rep in $(seq 1 $REPS); do
         t=$(apptainer exec gol.sif /gol_omp $ROWS $COLS $GENS --threads $threads 2>&1 | grep "Tiempo de simulación" | awk '{print $(NF-1)}')
+        echo "[DEBUG] Tiempo medido para omp con $threads hilos, rep $rep: '$t'"
+        if [ -z "$t" ]; then
+            echo "[WARN] Tiempo vacío para omp con $threads hilos, rep $rep, saltando..."
+            continue
+        fi
         speedup=$(echo "$T1 / $t" | bc -l)
         efficiency=$(echo "$speedup / $threads" | bc -l)
         echo "omp,1,$threads,$ROWS,$COLS,$GENS,$rep,$t,$speedup,$efficiency" >> $CSV
@@ -44,6 +53,11 @@ while read procs threads; do
     echo "Ejecutando: $procs procesos, $threads hilos por proceso..."
     for rep in $(seq 1 $REPS); do
         t=$(apptainer exec gol.sif mpirun -np $procs /gol_mpi_omp $ROWS $COLS $GENS --threads $threads 2>&1 | grep "Tiempo de simulación" | awk '{print $(NF-1)}')
+        echo "[DEBUG] Tiempo medido para mpi_omp con $procs procesos, $threads hilos, rep $rep: '$t'"
+        if [ -z "$t" ]; then
+            echo "[WARN] Tiempo vacío para mpi_omp con $procs procesos, $threads hilos, rep $rep, saltando..."
+            continue
+        fi
         total_cores=$((procs * threads))
         speedup=$(echo "$T1 / $t" | bc -l)
         efficiency=$(echo "$speedup / $total_cores" | bc -l)
