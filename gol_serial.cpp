@@ -8,6 +8,7 @@
 #include <vector>
 #include <chrono>
 #include <thread>
+#include <fstream>
 
 // ============================================================================
 // CONFIGURACIÓN GLOBAL DEL JUEGO
@@ -97,9 +98,11 @@ int main(int argc, char* argv[]) {
     // Inicializa el tablero con valores aleatorios reproducibles
     int rows = 10, cols = 10, generations = 10;
     bool print = false;
+    std::string savefile = "";
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--print") print = true;
+        else if (arg == "--save" && i + 1 < argc) { savefile = argv[++i]; }
         else if (i + 2 < argc) {
             rows = std::stoi(argv[i]);
             cols = std::stoi(argv[i+1]);
@@ -127,5 +130,15 @@ int main(int argc, char* argv[]) {
     auto t1 = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0);
     std::cout << "Tiempo de simulación: " << duration.count() / 1000000.0 << " segundos\n";
+    // Guardar la última generación si se solicita
+    if (!savefile.empty()) {
+        std::ofstream fout(savefile);
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j)
+                fout << (board[idx(i, j, cols)] ? 'O' : ' ');
+            fout << '\n';
+        }
+        fout.close();
+    }
     return 0;
 } 

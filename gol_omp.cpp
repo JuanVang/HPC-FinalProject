@@ -16,6 +16,7 @@
 #include <chrono>
 #include <thread>
 #include <omp.h>
+#include <fstream>
 
 const char ALIVE = 'O';
 const char DEAD = ' ';
@@ -85,15 +86,17 @@ std::vector<int> initializeBoard(int rows, int cols) {
 int main(int argc, char* argv[]) {
     int rows = 10, cols = 10, generations = 10;
     bool print = false;
-    int num_threads = 0;  // 0 significa usar OMP_NUM_THREADS o valor por defecto
-    
+    int num_threads = 0;
+    std::string savefile = "";
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--print") {
             print = true;
         } else if (arg == "--threads" && i + 1 < argc) {
             num_threads = std::stoi(argv[i + 1]);
-            i++;  // Saltar el siguiente argumento
+            i++;
+        } else if (arg == "--save" && i + 1 < argc) {
+            savefile = argv[++i];
         } else if (i + 2 < argc) {
             rows = std::stoi(argv[i]);
             cols = std::stoi(argv[i+1]);
@@ -134,5 +137,15 @@ int main(int argc, char* argv[]) {
     std::cout << "Tiempo de simulación: " << (t1-t0) << " segundos\n";
     std::cout << "Hilos utilizados: " << omp_get_max_threads() << "\n";
     
+    // Guardar la última generación si se solicita
+    if (!savefile.empty()) {
+        std::ofstream fout(savefile);
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j)
+                fout << (board[idx(i, j, cols)] ? 'O' : ' ');
+            fout << '\n';
+        }
+        fout.close();
+    }
     return 0;
 } 

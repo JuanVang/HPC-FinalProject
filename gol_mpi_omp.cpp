@@ -8,6 +8,7 @@
 #include <vector>
 #include <string>
 #include <unistd.h>
+#include <fstream>
 
 #define ALIVE 1
 #define DEAD  0
@@ -96,10 +97,12 @@ int main(int argc, char** argv) {
     // II. Parsear argumentos
     int rows = 10, cols = 10, steps = 10, num_threads = 0;
     bool print = false;
+    std::string savefile = "";
     for (int i = 1; i < argc; ++i) {
         string arg = argv[i];
         if (arg == "--print") print = true;
         else if (arg == "--threads" && i+1 < argc) { num_threads = stoi(argv[++i]); }
+        else if (arg == "--save" && i+1 < argc) { savefile = argv[++i]; }
         else if (i+2 < argc) { rows = stoi(argv[i]); cols = stoi(argv[i+1]); steps = stoi(argv[i+2]); i += 2; }
     }
     if (num_threads > 0) omp_set_num_threads(num_threads);
@@ -169,6 +172,36 @@ int main(int argc, char** argv) {
 
         // XE. Copiar next a current
         copy_grid(current, next, local_rows, cols, total_cols);
+    }
+
+    // Recolectar la última generación en el proceso 0
+    vector<int> global_grid;
+    vector<int> recvcounts(size), displs(size);
+    if (!savefile.empty() && rank == 0) {
+        global_grid.resize(rows * cols);
+        int base_rows = rows / size, extra = rows % size, offset = 0;
+        for (int i = 0; i < size; ++i) {
+            int rows_for_process = (i < extra) ? base_rows + 1 : base_rows;
+            recvcounts[i] = rows_for_process * cols;
+            displs[i] = offset;
+            offset += rows_for_process * cols;
+        }
+    }
+    vector<int> sendbuf(local_rows * cols);
+    for (int i = 1; i <= local_rows; ++i)
+        for (int j = 1; j <= cols; ++j)
+            sendbuf[(i-1)*cols + (j-1)] = current[idx(i, j, total_cols)];
+    MPI_Gatherv(sendbuf.data(), local_rows*cols, MPI_INT,
+                global_grid.data(), recvcounts.data(), displs.data(), MPI_INT,
+                0, MPI_COMM_WORLD);
+    if (!savefile.empty() && rank == 0) {
+        std::ofstream fout(savefile);
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j)
+                fout << (global_grid[i*cols + j] ? 'O' : ' ');
+            fout << '\n';
+        }
+        fout.close();
     }
 
     // Sincronización y tiempo final
