@@ -49,10 +49,8 @@ COMBOS="1 16
 4 4
 8 2
 16 1"
-for combo in $COMBOS; do
-    set -- $combo
-    procs=$1
-    threads=$2
+echo "$COMBOS" | while read procs threads; do
+    if [ -z "$procs" ] || [ -z "$threads" ]; then continue; fi
     for rep in $(seq 1 $REPS); do
         t=$(apptainer exec gol.sif mpirun -np $procs /gol_mpi_omp $ROWS $COLS $GENS --threads $threads 2>&1 | grep "Tiempo de simulación" | awk '{print $(NF-1)}')
         echo "[DEBUG] Tiempo medido para mpi_omp con $procs procesos, $threads hilos, rep $rep: '$t'"
