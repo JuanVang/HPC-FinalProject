@@ -42,10 +42,9 @@ int countLiveNeighbors(const std::vector<int>& board, int x, int y, int rows, in
     for (int dx = -1; dx <= 1; ++dx)
         for (int dy = -1; dy <= 1; ++dy)
             if (!(dx == 0 && dy == 0)) {
-                int nx = x + dx;
-                int ny = y + dy;
-                if (nx >= 0 && nx < rows && ny >= 0 && ny < cols)
-                    count += board[idx(nx, ny, cols)];
+                int nx = (x + dx + rows) % rows;
+                int ny = (y + dy + cols) % cols;
+                count += board[idx(nx, ny, cols)];
             }
     return count;
 }

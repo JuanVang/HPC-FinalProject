@@ -44,18 +44,12 @@ void printBoard(const std::vector<int>& board, int rows, int cols) {
 // ============================================================================
 int countLiveNeighbors(const std::vector<int>& board, int x, int y, int rows, int cols) {
     int count = 0;
-    
-    // Itera sobre las 8 posiciones vecinas (3x3 grid centrado en la celda)
-    for (int dx = -1; dx <= 1; ++dx)      // Desplazamiento en dirección X
-        for (int dy = -1; dy <= 1; ++dy)  // Desplazamiento en dirección Y
-            if (!(dx == 0 && dy == 0)) {  // Excluye la celda central (0,0)
-                // Calcula las coordenadas del vecino
-                int nx = x + dx;
-                int ny = y + dy;
-                
-                // Verifica que el vecino esté dentro de los límites del tablero
-                if (nx >= 0 && nx < rows && ny >= 0 && ny < cols)
-                    count += board[idx(nx, ny, cols)]; // Suma 1 si está vivo, 0 si está muerto
+    for (int dx = -1; dx <= 1; ++dx)
+        for (int dy = -1; dy <= 1; ++dy)
+            if (!(dx == 0 && dy == 0)) {
+                int nx = (x + dx + rows) % rows;
+                int ny = (y + dy + cols) % cols;
+                count += board[idx(nx, ny, cols)];
             }
     return count;
 }
