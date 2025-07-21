@@ -15,7 +15,7 @@ mpi_omp_summary = mpi_omp.groupby('threads').agg({'speedup':'mean', 'efficiency'
 # Graficar Speed-up
 plt.figure(figsize=(8,5))
 plt.plot(omp_summary['threads'], omp_summary['speedup'], marker='o', label='OpenMP')
-plt.plot(mpi_omp_summary['threads'], mpi_omp_summary['speedup'], marker='s', label='MPI+OpenMP (np=2)')
+plt.plot(mpi_omp_summary['threads'], mpi_omp_summary['speedup'], marker='s', label='MPI+OpenMP')
 plt.plot(omp_summary['threads'], omp_summary['threads'], 'k--', label='Ideal')
 plt.xlabel('Número de hilos por proceso')
 plt.ylabel('Speed-up')
@@ -29,7 +29,7 @@ plt.show()
 # Graficar Eficiencia
 plt.figure(figsize=(8,5))
 plt.plot(omp_summary['threads'], omp_summary['efficiency'], marker='o', label='OpenMP')
-plt.plot(mpi_omp_summary['threads'], mpi_omp_summary['efficiency'], marker='s', label='MPI+OpenMP (np=2)')
+plt.plot(mpi_omp_summary['threads'], mpi_omp_summary['efficiency'], marker='s', label='MPI+OpenMP')
 plt.xlabel('Número de hilos por proceso')
 plt.ylabel('Eficiencia')
 plt.title('Eficiencia vs. Número de hilos')

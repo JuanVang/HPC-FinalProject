@@ -47,8 +47,7 @@ echo "Ejecutando versión MPI+OpenMP con combinaciones balanceadas (16 hilos tot
 COMBOS="1 16
 2 8
 4 4
-8 2
-16 1"
+8 2"
 echo "$COMBOS" | while read procs threads; do
     if [ -z "$procs" ] || [ -z "$threads" ]; then continue; fi
     for rep in $(seq 1 $REPS); do
