@@ -16,8 +16,6 @@
 #include <chrono>
 #include <thread>
 #include <omp.h>
-#include <cstdlib>
-#include <ctime>
 
 const char ALIVE = 'O';
 const char DEAD = ' ';
@@ -71,16 +69,14 @@ std::vector<int> nextGeneration(const std::vector<int>& board, int rows, int col
 }
 
 std::vector<int> initializeBoard(int rows, int cols) {
-    // Inicializa el generador de números aleatorios con semilla fija
-    srand(SEED);
-    
     std::vector<int> board(rows * cols, 0);
     
-    // Inicialización secuencial para garantizar el mismo patrón que la versión serial
-    // NO paralelizar la inicialización para evitar problemas con rand()
+    // Función hash determinista: para cada posición (i,j), genera un valor basado en la posición
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
-            board[idx(i, j, cols)] = (rand() % 100 < 20) ? 1 : 0;
+            // Hash simple: (i * 31 + j * 17 + SEED) % 100
+            int hash = (i * 31 + j * 17 + SEED) % 100;
+            board[idx(i, j, cols)] = (hash < 20) ? 1 : 0;  // 20% probabilidad
         }
     }
     

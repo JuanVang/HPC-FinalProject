@@ -8,8 +8,6 @@
 #include <vector>
 #include <chrono>
 #include <thread>
-#include <cstdlib>
-#include <ctime>
 
 // ============================================================================
 // CONFIGURACIÓN GLOBAL DEL JUEGO
@@ -80,19 +78,18 @@ std::vector<int> nextGeneration(const std::vector<int>& board, int rows, int col
 }
 
 // ============================================================================
-// FUNCIÓN PARA INICIALIZAR EL TABLERO CON VALORES ALEATORIOS REPRODUCIBLES
+// FUNCIÓN PARA INICIALIZAR EL TABLERO CON PATRÓN DETERMINISTA
 // ============================================================================
 std::vector<int> initializeBoard(int rows, int cols) {
-    // Inicializa el generador de números aleatorios con semilla fija
-    srand(SEED);
-    
     // Crea un tablero vacío (todas las células muertas)
     std::vector<int> board(rows * cols, 0);
     
-    // Inicializa el tablero con valores aleatorios (0 o 1, 20% vivas)
+    // Función hash determinista: para cada posición (i,j), genera un valor basado en la posición
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
-            board[idx(i, j, cols)] = (rand() % 100 < 20) ? 1 : 0;  // 20% probabilidad de estar viva
+            // Hash simple: (i * 31 + j * 17 + SEED) % 100
+            int hash = (i * 31 + j * 17 + SEED) % 100;
+            board[idx(i, j, cols)] = (hash < 20) ? 1 : 0;  // 20% probabilidad
         }
     }
     

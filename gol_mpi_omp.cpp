@@ -18,8 +18,6 @@
 #include <vector>
 #include <unistd.h> // para usleep
 #include <string>
-#include <cstdlib>
-#include <ctime>
 
 // ============================================================================
 // CONSTANTES Y DEFINICIONES
@@ -60,10 +58,13 @@ void initialize_grid(vector<int>& grid, int local_rows, int cols, int rank, int 
     
     // Para el caso simple de 1 proceso, usar la misma lógica que las versiones serial/OpenMP
     if (size == 1) {
-        srand(SEED);
         for (int i = 1; i <= local_rows; ++i) {
             for (int j = 1; j <= cols; ++j) {
-                grid[idx(i, j, total_cols)] = (rand() % 100 < 20) ? 1 : 0;
+                // Hash simple: (i * 31 + j * 17 + SEED) % 100
+                // Nota: i-1 y j-1 porque los bordes están en índices 0 y cols+1
+                int global_i = i - 1;  // Convertir a coordenadas globales
+                int hash = (global_i * 31 + (j-1) * 17 + SEED) % 100;
+                grid[idx(i, j, total_cols)] = (hash < 20) ? 1 : 0;  // 20% probabilidad
             }
         }
         return;
