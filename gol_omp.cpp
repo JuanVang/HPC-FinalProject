@@ -71,11 +71,12 @@ std::vector<int> nextGeneration(const std::vector<int>& board, int rows, int col
 }
 
 std::vector<int> initializeBoard(int rows, int cols) {
+    // Inicializa el generador de números aleatorios con semilla fija
     srand(SEED);
+    
     std::vector<int> board(rows * cols, 0);
     
-    // Paralelizar la inicialización para mejor rendimiento
-    #pragma omp parallel for collapse(2) schedule(static, 16)
+    // Inicialización secuencial para garantizar el mismo patrón que la versión serial
     for (int i = 0; i < rows; ++i)
         for (int j = 0; j < cols; ++j)
             board[idx(i, j, cols)] = (rand() % 100 < 20) ? 1 : 0;

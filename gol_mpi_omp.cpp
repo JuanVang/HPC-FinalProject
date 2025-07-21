@@ -16,10 +16,10 @@
 #include <omp.h>      // Para paralelismo de hilos (OpenMP)
 #include <iostream>
 #include <vector>
-#include <cstdlib>
-#include <ctime>
 #include <unistd.h> // para usleep
 #include <string>
+#include <cstdlib>
+#include <ctime>
 
 // ============================================================================
 // CONSTANTES Y DEFINICIONES
@@ -53,19 +53,53 @@ int count_neighbors(const vector<int>& grid, int i, int j, int cols) {
 }
 
 // ============================================================================
-// FUNCIÓN PARA INICIALIZAR EL GRID CON VALORES ALEATORIOS REPRODUCIBLES
+// FUNCIÓN PARA INICIALIZAR EL GRID CON PATRÓN COMPLETO GENERADO EN PROCESO 0
 // ============================================================================
-void initialize_grid(vector<int>& grid, int local_rows, int cols, int rank) {
+void initialize_grid(vector<int>& grid, int local_rows, int cols, int rank, int size, int total_rows) {
     int total_cols = cols + 2;  // +2 para incluir las columnas de borde
     
-    // Inicializa el generador de números aleatorios con semilla fija
-    // TODOS los procesos usan la misma semilla para generar el mismo tablero
-    srand(SEED);
+    vector<int> full_pattern;
     
-    // Inicializa solo las células internas (no los bordes)
-    for (int i = 1; i <= local_rows; ++i)
-        for (int j = 1; j <= cols; ++j)
-            grid[idx(i, j, total_cols)] = (rand() % 100 < 20) ? 1 : 0;  // 20% probabilidad de estar viva
+    if (rank == 0) {
+        // Solo el proceso 0 genera el patrón completo
+        srand(SEED);
+        full_pattern.resize(total_rows * cols);
+        
+        for (int i = 0; i < total_rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                full_pattern[i * cols + j] = (rand() % 100 < 20) ? 1 : 0;  // 20% probabilidad de estar viva
+            }
+        }
+    }
+    
+    // Distribuir las filas correspondientes a cada proceso
+    vector<int> sendcounts(size);
+    vector<int> displs(size);
+    
+    // Calcular cuántos datos enviar a cada proceso
+    int base_rows = total_rows / size;
+    int extra = total_rows % size;
+    int offset = 0;
+    
+    for (int i = 0; i < size; ++i) {
+        int rows_for_process = (i < extra) ? base_rows + 1 : base_rows;
+        sendcounts[i] = rows_for_process * cols;
+        displs[i] = offset;
+        offset += rows_for_process * cols;
+    }
+    
+    // Recibir las filas correspondientes a este proceso
+    vector<int> recvbuf(local_rows * cols);
+    MPI_Scatterv(full_pattern.data(), sendcounts.data(), displs.data(), MPI_INT,
+                 recvbuf.data(), local_rows * cols, MPI_INT,
+                 0, MPI_COMM_WORLD);
+    
+    // Copiar los datos recibidos al grid local (excluyendo bordes)
+    for (int i = 1; i <= local_rows; ++i) {
+        for (int j = 1; j <= cols; ++j) {
+            grid[idx(i, j, total_cols)] = recvbuf[(i - 1) * cols + (j - 1)];
+        }
+    }
 }
 
 // ============================================================================
@@ -191,7 +225,7 @@ int main(int argc, char** argv) {
 
     vector<int> current(total_rows * total_cols, DEAD);
     vector<int> next(total_rows * total_cols, DEAD);
-    initialize_grid(current, local_rows, cols, rank);
+    initialize_grid(current, local_rows, cols, rank, size, rows);
 
     int up = (rank - 1 + size) % size;
     int down = (rank + 1) % size;
