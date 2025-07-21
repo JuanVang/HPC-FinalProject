@@ -44,12 +44,11 @@ done
 
 # 3. MPI+OpenMP con combinaciones balanceadas para 16 hilos totales
 echo "Ejecutando versión MPI+OpenMP con combinaciones balanceadas (16 hilos totales)..."
-COMBOS="1 16
-2 8
-4 4
-8 2"
-echo "$COMBOS" | while read procs threads; do
-    if [ -z "$procs" ] || [ -z "$threads" ]; then continue; fi
+PROCS_LIST=(1 2 4 8)
+THREADS_LIST=(16 8 4 2)
+for i in ${!PROCS_LIST[@]}; do
+    procs=${PROCS_LIST[$i]}
+    threads=${THREADS_LIST[$i]}
     for rep in $(seq 1 $REPS); do
         echo "Comando: apptainer exec gol.sif mpirun -np $procs /gol_mpi_omp $ROWS $COLS $GENS --threads $threads"
         output=$(apptainer exec gol.sif mpirun -np $procs /gol_mpi_omp $ROWS $COLS $GENS --threads $threads 2>&1)
