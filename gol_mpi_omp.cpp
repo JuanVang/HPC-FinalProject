@@ -194,41 +194,43 @@ int main(int argc, char** argv) {
         copy_grid(current, next, local_rows, cols, total_cols);
     }
 
-    // Recolectar la última generación en el proceso 0
-    vector<int> global_grid;
-    vector<int> recvcounts(size), displs(size);
-    if (!savefile.empty() && rank == 0) {
-        global_grid.resize(rows * cols);
-        int base_rows = rows / size, extra = rows % size, offset = 0;
-        for (int i = 0; i < size; ++i) {
-            int rows_for_process = (i < extra) ? base_rows + 1 : base_rows;
-            recvcounts[i] = rows_for_process * cols;
-            displs[i] = offset;
-            offset += rows_for_process * cols;
+    // Recolectar la última generación en el proceso 0 SOLO si se usa --save
+    if (!savefile.empty()) {
+        vector<int> global_grid;
+        vector<int> recvcounts(size), displs(size);
+        if (rank == 0) {
+            global_grid.resize(rows * cols);
+            int base_rows = rows / size, extra = rows % size, offset = 0;
+            for (int i = 0; i < size; ++i) {
+                int rows_for_process = (i < extra) ? base_rows + 1 : base_rows;
+                recvcounts[i] = rows_for_process * cols;
+                displs[i] = offset;
+                offset += rows_for_process * cols;
+            }
+            // Depuración: imprimir recvcounts y displs
+            std::cout << "[DEBUG] recvcounts: ";
+            for (int i = 0; i < size; ++i) std::cout << recvcounts[i] << " ";
+            std::cout << "\n[DEBUG] displs: ";
+            for (int i = 0; i < size; ++i) std::cout << displs[i] << " ";
+            std::cout << std::endl;
+            std::cout << "[DEBUG] global_grid size: " << global_grid.size() << std::endl;
         }
-        // Depuración: imprimir recvcounts y displs
-        std::cout << "[DEBUG] recvcounts: ";
-        for (int i = 0; i < size; ++i) std::cout << recvcounts[i] << " ";
-        std::cout << "\n[DEBUG] displs: ";
-        for (int i = 0; i < size; ++i) std::cout << displs[i] << " ";
-        std::cout << std::endl;
-        std::cout << "[DEBUG] global_grid size: " << global_grid.size() << std::endl;
-    }
-    vector<int> sendbuf(local_rows * cols);
-    for (int i = 1; i <= local_rows; ++i)
-        for (int j = 1; j <= cols; ++j)
-            sendbuf[(i-1)*cols + (j-1)] = current[idx(i, j, total_cols)];
-    MPI_Gatherv(sendbuf.data(), local_rows*cols, MPI_INT,
-                global_grid.data(), recvcounts.data(), displs.data(), MPI_INT,
-                0, MPI_COMM_WORLD);
-    if (!savefile.empty() && rank == 0) {
-        std::ofstream fout(savefile);
-        for (int i = 0; i < rows; ++i) {
-            for (int j = 0; j < cols; ++j)
-                fout << (global_grid[i*cols + j] ? 'O' : ' ');
-            fout << '\n';
+        vector<int> sendbuf(local_rows * cols);
+        for (int i = 1; i <= local_rows; ++i)
+            for (int j = 1; j <= cols; ++j)
+                sendbuf[(i-1)*cols + (j-1)] = current[idx(i, j, total_cols)];
+        MPI_Gatherv(sendbuf.data(), local_rows*cols, MPI_INT,
+                    global_grid.data(), recvcounts.data(), displs.data(), MPI_INT,
+                    0, MPI_COMM_WORLD);
+        if (rank == 0) {
+            std::ofstream fout(savefile);
+            for (int i = 0; i < rows; ++i) {
+                for (int j = 0; j < cols; ++j)
+                    fout << (global_grid[i*cols + j] ? 'O' : ' ');
+                fout << '\n';
+            }
+            fout.close();
         }
-        fout.close();
     }
 
     // Sincronización y tiempo final
