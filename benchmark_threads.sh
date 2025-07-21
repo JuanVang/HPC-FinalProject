@@ -51,7 +51,10 @@ COMBOS="1 16
 echo "$COMBOS" | while read procs threads; do
     if [ -z "$procs" ] || [ -z "$threads" ]; then continue; fi
     for rep in $(seq 1 $REPS); do
-        t=$(apptainer exec gol.sif mpirun -np $procs /gol_mpi_omp $ROWS $COLS $GENS --threads $threads 2>&1 | grep "Tiempo de simulación" | awk '{print $(NF-1)}')
+        echo "Comando: apptainer exec gol.sif mpirun -np $procs /gol_mpi_omp $ROWS $COLS $GENS --threads $threads"
+        output=$(apptainer exec gol.sif mpirun -np $procs /gol_mpi_omp $ROWS $COLS $GENS --threads $threads 2>&1)
+        echo "$output"
+        t=$(echo "$output" | grep "Tiempo de simulación" | awk '{print $(NF-1)}')
         echo "[DEBUG] Tiempo medido para mpi_omp con $procs procesos, $threads hilos, rep $rep: '$t'"
         if [ -z "$t" ]; then
             echo "[WARN] Tiempo vacío para mpi_omp con $procs procesos, $threads hilos, rep $rep, saltando..."
