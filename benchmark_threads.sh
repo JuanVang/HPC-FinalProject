@@ -7,7 +7,6 @@ GENS=100
 REPS=3
 CSV=benchmark_threads.csv
 MAX_THREADS=16
-PROCS=2
 
 # Encabezado CSV
 echo "version,procs,threads,rows,cols,gens,run,time_sec,speedup,efficiency" > $CSV
@@ -43,20 +42,28 @@ for threads in $(seq 1 $MAX_THREADS); do
     done
 done
 
-# 3. MPI+OpenMP con -np 2, threads 1 a 16
-echo "Ejecutando versión MPI+OpenMP con $PROCS procesos..."
-for threads in $(seq 1 $MAX_THREADS); do
+# 3. MPI+OpenMP con combinaciones balanceadas para 16 hilos totales
+echo "Ejecutando versión MPI+OpenMP con combinaciones balanceadas (16 hilos totales)..."
+COMBOS="1 16
+2 8
+4 4
+8 2
+16 1"
+for combo in $COMBOS; do
+    set -- $combo
+    procs=$1
+    threads=$2
     for rep in $(seq 1 $REPS); do
-        t=$(apptainer exec gol.sif mpirun -np $PROCS /gol_mpi_omp $ROWS $COLS $GENS --threads $threads 2>&1 | grep "Tiempo de simulación" | awk '{print $(NF-1)}')
-        echo "[DEBUG] Tiempo medido para mpi_omp con $PROCS procesos, $threads hilos, rep $rep: '$t'"
+        t=$(apptainer exec gol.sif mpirun -np $procs /gol_mpi_omp $ROWS $COLS $GENS --threads $threads 2>&1 | grep "Tiempo de simulación" | awk '{print $(NF-1)}')
+        echo "[DEBUG] Tiempo medido para mpi_omp con $procs procesos, $threads hilos, rep $rep: '$t'"
         if [ -z "$t" ]; then
-            echo "[WARN] Tiempo vacío para mpi_omp con $PROCS procesos, $threads hilos, rep $rep, saltando..."
+            echo "[WARN] Tiempo vacío para mpi_omp con $procs procesos, $threads hilos, rep $rep, saltando..."
             continue
         fi
-        total_cores=$((PROCS * threads))
+        total_cores=$((procs * threads))
         speedup=$(echo "$T1 / $t" | bc -l)
         efficiency=$(echo "$speedup / $total_cores" | bc -l)
-        echo "mpi_omp,$PROCS,$threads,$ROWS,$COLS,$GENS,$rep,$t,$speedup,$efficiency" >> $CSV
+        echo "mpi_omp,$procs,$threads,$ROWS,$COLS,$GENS,$rep,$t,$speedup,$efficiency" >> $CSV
     done
 done
 
