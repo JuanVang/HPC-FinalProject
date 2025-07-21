@@ -87,6 +87,17 @@ int get_rows_for_process(int rank, int total_rows, int size) {
     return (rank < extra) ? base_rows + 1 : base_rows;
 }
 
+void print_local_debug(const vector<int>& grid, int local_rows, int cols, int total_cols, int rank, int step) {
+    cout << "[DEBUG] Proceso " << rank << ", paso " << step << ":\n";
+    for (int i = 0; i < local_rows + 2; ++i) {
+        for (int j = 0; j < cols + 2; ++j) {
+            cout << (grid[idx(i, j, total_cols)] == ALIVE ? 'O' : (grid[idx(i, j, total_cols)] == DEAD ? '.' : '?'));
+        }
+        cout << "\n";
+    }
+    cout << flush;
+}
+
 int main(int argc, char** argv) {
     // I. Inicializar entorno distribuido
     MPI_Init(&argc, &argv);
@@ -98,11 +109,13 @@ int main(int argc, char** argv) {
     int rows = 10, cols = 10, steps = 10, num_threads = 0;
     bool print = false;
     std::string savefile = "";
+    bool debug = false;
     for (int i = 1; i < argc; ++i) {
         string arg = argv[i];
         if (arg == "--print") print = true;
         else if (arg == "--threads" && i+1 < argc) { num_threads = stoi(argv[++i]); }
         else if (arg == "--save" && i+1 < argc) { savefile = argv[++i]; }
+        else if (arg == "--debug") debug = true;
         else if (i+2 < argc) { rows = stoi(argv[i]); cols = stoi(argv[i+1]); steps = stoi(argv[i+2]); i += 2; }
     }
     if (num_threads > 0) omp_set_num_threads(num_threads);
@@ -169,6 +182,13 @@ int main(int argc, char** argv) {
 
         // Esperar comunicación antes de calcular filas de borde
         MPI_Waitall(4, reqs, MPI_STATUSES_IGNORE);
+
+        // Depuración: imprimir subtablero local con ghost rows/columns
+        if (debug) {
+            MPI_Barrier(MPI_COMM_WORLD);
+            print_local_debug(current, local_rows, cols, total_cols, rank, step);
+            MPI_Barrier(MPI_COMM_WORLD);
+        }
 
         // XE. Copiar next a current
         copy_grid(current, next, local_rows, cols, total_cols);
