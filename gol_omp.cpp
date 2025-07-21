@@ -77,9 +77,12 @@ std::vector<int> initializeBoard(int rows, int cols) {
     std::vector<int> board(rows * cols, 0);
     
     // Inicialización secuencial para garantizar el mismo patrón que la versión serial
-    for (int i = 0; i < rows; ++i)
-        for (int j = 0; j < cols; ++j)
+    // NO paralelizar la inicialización para evitar problemas con rand()
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
             board[idx(i, j, cols)] = (rand() % 100 < 20) ? 1 : 0;
+        }
+    }
     
     return board;
 }

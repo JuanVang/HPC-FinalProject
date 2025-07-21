@@ -58,6 +58,18 @@ int count_neighbors(const vector<int>& grid, int i, int j, int cols) {
 void initialize_grid(vector<int>& grid, int local_rows, int cols, int rank, int size, int total_rows) {
     int total_cols = cols + 2;  // +2 para incluir las columnas de borde
     
+    // Para el caso simple de 1 proceso, usar la misma lógica que las versiones serial/OpenMP
+    if (size == 1) {
+        srand(SEED);
+        for (int i = 1; i <= local_rows; ++i) {
+            for (int j = 1; j <= cols; ++j) {
+                grid[idx(i, j, total_cols)] = (rand() % 100 < 20) ? 1 : 0;
+            }
+        }
+        return;
+    }
+    
+    // Para múltiples procesos, usar MPI_Scatterv
     vector<int> full_pattern;
     
     if (rank == 0) {
