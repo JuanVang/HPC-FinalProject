@@ -9,12 +9,13 @@
 #include <chrono>
 #include <thread>
 #include <fstream>
+#include <random>
 
 // ============================================================================
 // CONFIGURACIÓN GLOBAL DEL JUEGO
 // ============================================================================
 const char ALIVE = 'O';     // Carácter para representar células vivas
-const char DEAD = ' ';      // Carácter para representar células muertas (espacio)
+const char DEAD = '.';      // Carácter para representar células muertas (espacio)
 const int SEED = 42;        // Semilla fija para inicialización reproducible
 
 // ============================================================================
@@ -30,6 +31,8 @@ int idx(int i, int j, int cols) {
 // ============================================================================
 void printBoard(const std::vector<int>& board, int rows, int cols) {
     // Itera sobre cada fila del tablero
+    //system("clear");
+
     for (int i = 0; i < rows; ++i) {
         // Itera sobre cada celda en la fila actual
         for (int j = 0; j < cols; ++j) {
@@ -45,12 +48,112 @@ void printBoard(const std::vector<int>& board, int rows, int cols) {
 // ============================================================================
 int countLiveNeighbors(const std::vector<int>& board, int x, int y, int rows, int cols) {
     int count = 0;
-    for (int dx = -1; dx <= 1; ++dx)
-        for (int dy = -1; dy <= 1; ++dy)
-            if (!(dx == 0 && dy == 0)) {
-                int nx = (x + dx + rows) % rows;
-                int ny = (y + dy + cols) % cols;
-                count += board[idx(nx, ny, cols)];
+    std::vector<int> temporal_M(9, 0);
+    if(x ==0){
+        if (y==0){
+            temporal_M[idx(0,0,3)] = board[idx(rows-1,cols-1,cols)]; 
+            temporal_M[idx(0,1,3)] = board[idx(rows-1,0,cols)]; 
+            temporal_M[idx(0,2,3)] = board[idx(rows-1,1,cols)]; 
+            temporal_M[idx(1,0,3)] = board[idx(0,cols-1,cols)]; 
+            temporal_M[idx(1,1,3)] = board[idx(0,0,cols)]; 
+            temporal_M[idx(1,2,3)] = board[idx(0,1,cols)]; 
+            temporal_M[idx(2,0,3)] = board[idx(1,cols-1,cols)]; 
+            temporal_M[idx(2,1,3)] = board[idx(1,0,cols)]; 
+            temporal_M[idx(2,2,3)] = board[idx(1,1,cols)]; 
+        } else if (y==cols-1){
+            temporal_M[idx(0,0,3)] = board[idx(rows-1,cols-2,cols)]; 
+            temporal_M[idx(0,1,3)] = board[idx(rows-1,cols-1,cols)]; 
+            temporal_M[idx(0,2,3)] = board[idx(rows-1,0,cols)]; 
+            temporal_M[idx(1,0,3)] = board[idx(0,cols-2,cols)]; 
+            temporal_M[idx(1,1,3)] = board[idx(0,cols-1,cols)]; 
+            temporal_M[idx(1,2,3)] = board[idx(0,0,cols)]; 
+            temporal_M[idx(2,0,3)] = board[idx(1,cols-2,cols)]; 
+            temporal_M[idx(2,1,3)] = board[idx(1,cols-1,cols)]; 
+            temporal_M[idx(2,2,3)] = board[idx(1,0,cols)];
+        } else{
+            temporal_M[idx(0,0,3)] = board[idx(rows-1,y-1,cols)]; 
+            temporal_M[idx(0,1,3)] = board[idx(rows-1,y,cols)]; 
+            temporal_M[idx(0,2,3)] = board[idx(rows-1,y+1,cols)]; 
+            temporal_M[idx(1,0,3)] = board[idx(0,y-1,cols)]; 
+            temporal_M[idx(1,1,3)] = board[idx(0,y,cols)]; 
+            temporal_M[idx(1,2,3)] = board[idx(0,y+1,cols)]; 
+            temporal_M[idx(2,0,3)] = board[idx(1,y-1,cols)]; 
+            temporal_M[idx(2,1,3)] = board[idx(1,y,cols)]; 
+            temporal_M[idx(2,2,3)] = board[idx(1,y+1,cols)];
+        } 
+    } else if (y==0){
+        if (x==rows-1){
+            temporal_M[idx(0,0,3)] = board[idx(rows-2,cols-1,cols)]; 
+            temporal_M[idx(0,1,3)] = board[idx(rows-2,0,cols)]; 
+            temporal_M[idx(0,2,3)] = board[idx(rows-2,1,cols)]; 
+            temporal_M[idx(1,0,3)] = board[idx(rows-1,cols-1,cols)]; 
+            temporal_M[idx(1,1,3)] = board[idx(rows-1,0,cols)]; 
+            temporal_M[idx(1,2,3)] = board[idx(rows-1,1,cols)]; 
+            temporal_M[idx(2,0,3)] = board[idx(0,cols-1,cols)]; 
+            temporal_M[idx(2,1,3)] = board[idx(0,0,cols)]; 
+            temporal_M[idx(2,2,3)] = board[idx(0,1,cols)];
+        } else {
+            temporal_M[idx(0,0,3)] = board[idx(x-1,cols-1,cols)]; 
+            temporal_M[idx(0,1,3)] = board[idx(x-1,0,cols)]; 
+            temporal_M[idx(0,2,3)] = board[idx(x-1,1,cols)]; 
+            temporal_M[idx(1,0,3)] = board[idx(x,cols-1,cols)]; 
+            temporal_M[idx(1,1,3)] = board[idx(x,0,cols)]; 
+            temporal_M[idx(1,2,3)] = board[idx(x,1,cols)]; 
+            temporal_M[idx(2,0,3)] = board[idx(x+1,cols-1,cols)]; 
+            temporal_M[idx(2,1,3)] = board[idx(x+1,0,cols)]; 
+            temporal_M[idx(2,2,3)] = board[idx(x+1,1,cols)];
+        } 
+    } else if (x==rows-1){
+        if(y==cols-1){
+            temporal_M[idx(0,0,3)] = board[idx(rows-2,cols-2,cols)]; 
+            temporal_M[idx(0,1,3)] = board[idx(rows-2,cols-1,cols)]; 
+            temporal_M[idx(0,2,3)] = board[idx(rows-2,0,cols)]; 
+            temporal_M[idx(1,0,3)] = board[idx(rows-1,cols-2,cols)]; 
+            temporal_M[idx(1,1,3)] = board[idx(rows-1,cols-1,cols)]; 
+            temporal_M[idx(1,2,3)] = board[idx(rows-1,0,cols)]; 
+            temporal_M[idx(2,0,3)] = board[idx(0,cols-2,cols)]; 
+            temporal_M[idx(2,1,3)] = board[idx(0,cols-1,cols)]; 
+            temporal_M[idx(2,2,3)] = board[idx(0,0,cols)];
+        } else {
+            temporal_M[idx(0,0,3)] = board[idx(rows-2,y-1,cols)]; 
+            temporal_M[idx(0,1,3)] = board[idx(rows-2,y,cols)]; 
+            temporal_M[idx(0,2,3)] = board[idx(rows-2,y+1,cols)]; 
+            temporal_M[idx(1,0,3)] = board[idx(rows-1,y-1,cols)]; 
+            temporal_M[idx(1,1,3)] = board[idx(rows-1,y,cols)]; 
+            temporal_M[idx(1,2,3)] = board[idx(rows-1,y+1,cols)]; 
+            temporal_M[idx(2,0,3)] = board[idx(0,y-1,cols)]; 
+            temporal_M[idx(2,1,3)] = board[idx(0,y,cols)]; 
+            temporal_M[idx(2,2,3)] = board[idx(0,y+1,cols)];
+        } 
+    } else if (y==cols-1) {
+        temporal_M[idx(0,0,3)] = board[idx(x-1,cols-2,cols)]; 
+        temporal_M[idx(0,1,3)] = board[idx(x-1,cols-1,cols)]; 
+        temporal_M[idx(0,2,3)] = board[idx(x-1,0,cols)]; 
+        temporal_M[idx(1,0,3)] = board[idx(x,cols-2,cols)]; 
+        temporal_M[idx(1,1,3)] = board[idx(x,cols-1,cols)]; 
+        temporal_M[idx(1,2,3)] = board[idx(x,0,cols)]; 
+        temporal_M[idx(2,0,3)] = board[idx(x+1,cols-2,cols)]; 
+        temporal_M[idx(2,1,3)] = board[idx(x+1,cols-1,cols)]; 
+        temporal_M[idx(2,2,3)] = board[idx(x+1,0,cols)];
+    } else {
+        temporal_M[idx(0,0,3)] = board[idx(x-1,y-1,cols)]; 
+        temporal_M[idx(0,1,3)] = board[idx(x-1,y,cols)]; 
+        temporal_M[idx(0,2,3)] = board[idx(x-1,y+1,cols)]; 
+        temporal_M[idx(1,0,3)] = board[idx(x,y-1,cols)]; 
+        temporal_M[idx(1,1,3)] = board[idx(x,y,cols)]; 
+        temporal_M[idx(1,2,3)] = board[idx(x,y+1,cols)]; 
+        temporal_M[idx(2,0,3)] = board[idx(x+1,y-1,cols)]; 
+        temporal_M[idx(2,1,3)] = board[idx(x+1,y,cols)]; 
+        temporal_M[idx(2,2,3)] = board[idx(x+1,y+1,cols)];
+    } 
+    
+    // Por cada x,y, se crea una 'matriz' 3x3 donde x,y es el elemento 1,1 de esta nueva 'matriz'
+    //
+    //
+    for (int ii = 0; ii <= 2; ii++)
+        for (int jj = 0; jj <= 2; jj++)
+            if (!(ii == 1 && jj == 1)) {
+                count += temporal_M[idx(ii, jj, 3)];
             }
     return count;
 }
@@ -76,15 +179,13 @@ std::vector<int> nextGeneration(const std::vector<int>& board, int rows, int col
 // FUNCIÓN PARA INICIALIZAR EL TABLERO CON PATRÓN DETERMINISTA
 // ============================================================================
 std::vector<int> initializeBoard(int rows, int cols) {
-    // Crea un tablero vacío (todas las células muertas)
     std::vector<int> board(rows * cols, 0);
+    std::mt19937 gen(SEED);
+    std::uniform_real_distribution<> disunif(0.0, 1.0);
     
-    // Función hash determinista: para cada posición (i,j), genera un valor basado en la posición
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
-            // Hash simple: (i * 31 + j * 17 + SEED) % 100
-            int hash = (i * 31 + j * 17 + SEED) % 100;
-            board[idx(i, j, cols)] = (hash < 20) ? 1 : 0;  // 20% probabilidad
+            board[idx(i, j, cols)] = (disunif(gen) < 0.4) ? 1 : 0;  // 20% probabilidad
         }
     }
     
@@ -119,8 +220,9 @@ int main(int argc, char* argv[]) {
     for (int gen = 0; gen < generations; ++gen) {
         // Muestra el número de la generación actual
         if (print) {
-            std::cout << "Generación: " << gen << "\n";
+            //std::cout << "Generación: " << gen << "\n";
             printBoard(board, rows, cols);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         
         // Calcula y actualiza el tablero para la siguiente generación
@@ -141,4 +243,4 @@ int main(int argc, char* argv[]) {
         fout.close();
     }
     return 0;
-} 
+}
