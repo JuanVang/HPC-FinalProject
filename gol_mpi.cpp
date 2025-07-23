@@ -1,111 +1,66 @@
 // ============================================================================
 // JUEGO DE LA VIDA - IMPLEMENTACIÓN HÍBRIDA MPI + OpenMP 
 // ============================================================================
-// Este código implementa el juego de la vida usando:
-// - MPI: Para paralelismo distribuido (múltiples procesos)
-// 
-// MEJORAS IMPLEMENTADAS DE LA VERSION ANTERIOR:
-// 1. Distribución equitativa de filas (maneja casos donde rows % size != 0)
-// 2. Comunicación no bloqueante (MPI_Isend/Irecv para superponer cálculo y comunicación)
-// 3. Medición de tiempo precisa (MPI_Wtime + MPI_Barrier)
-// 4. Recolección con MPI_Gatherv (maneja distribución desigual de filas)
-// ============================================================================
-
-#include <mpi.h>      // Para comunicación entre procesos (MPI)
+#include <mpi.h>
 #include <iostream>
 #include <vector>
-#include <cstdlib>
-#include <ctime>
-#include <unistd.h> // para usleep
 #include <string>
+#include <unistd.h>
+#include <fstream>
+#include <random>
+#include <thread>
+#include <chrono>
+
+#define ALIVE 1
+#define DEAD  0
+#define SEED 42
+
+// Función auxiliar para índice 1D
+int idx(int i, int j, int cols) { return i * cols + j; }
 
 // ============================================================================
-// CONSTANTES Y DEFINICIONES
+// FUNCIÓN PARA LIMPIAR LA CONSOLA (ANIMACIÓN)
 // ============================================================================
-#define ALIVE 1    // Valor que representa una célula viva
-#define DEAD  0    // Valor que representa una célula muerta
-#define SEED 42    // Semilla fija para inicialización reproducible
-
-using namespace std;
-
-// ============================================================================
-// FUNCIÓN AUXILIAR PARA CALCULAR ÍNDICE EN ARRAY UNIDIMENSIONAL
-// ============================================================================
-// Convierte coordenadas 2D (i,j) a índice 1D en un array
-// total_cols incluye las columnas de borde (ghost cells)
-int idx(int i, int j, int cols) {
-    return i * cols + j;
+void clearScreen() {
+    // ANSI escape code para limpiar pantalla y mover cursor al inicio
+    std::cout << "\033[2J\033[H";
 }
 
 // ============================================================================
-// FUNCIÓN PARA CONTAR VECINOS VIVOS DE UNA CÉLULA
+// FUNCIÓN PARA INICIALIZAR EL TABLERO CON PATRÓN ALEATORIO ESTÁNDAR (GLOBAL)
 // ============================================================================
-// Esta función suma los valores de las 8 células vecinas
-// Asume que el grid tiene bordes (ghost cells) para manejar condiciones de frontera
-int count_neighbors(const vector<int>& grid, int i, int j, int cols) {
-    int total_cols = cols;
-    // Suma directa de los 8 vecinos (3x3 grid menos la celda central)
-    return grid[idx(i-1, j-1, total_cols)] + grid[idx(i-1, j, total_cols)] + grid[idx(i-1, j+1, total_cols)] +
-           grid[idx(i,   j-1, total_cols)] +                          grid[idx(i,   j+1, total_cols)] +
-           grid[idx(i+1, j-1, total_cols)] + grid[idx(i+1, j, total_cols)] + grid[idx(i+1, j+1, total_cols)];
+// Esta función solo se usa en el proceso raíz para inicializar el tablero global
+std::vector<int> initializeBoard(int rows, int cols, double prob = 0.2, int seed = 42) {
+    std::vector<int> board(rows * cols, 0);
+    std::mt19937 gen(seed);
+    std::bernoulli_distribution dist(prob);
+    for (int i = 0; i < rows; ++i)
+        for (int j = 0; j < cols; ++j)
+            board[i * cols + j] = dist(gen) ? 1 : 0;
+    return board;
 }
 
 // ============================================================================
-// FUNCIÓN PARA INICIALIZAR EL GRID CON VALORES ALEATORIOS REPRODUCIBLES
+// FUNCIÓN PARA INICIALIZAR UN GLIDER EN LA ESQUINA SUPERIOR IZQUIERDA
 // ============================================================================
-void initialize_grid(vector<int>& grid, int local_rows, int cols, int rank) {
-    int total_cols = cols + 2;  // +2 para incluir las columnas de borde
-    
-    // Inicializa el generador de números aleatorios con semilla fija
-    // Usamos la semilla base + rank para que cada proceso tenga una secuencia diferente
-    // pero reproducible
-    srand(SEED + rank);
-    
-    // Inicializa solo las células internas (no los bordes)
-    for (int i = 1; i <= local_rows; ++i)
-        for (int j = 1; j <= cols; ++j)
-            grid[idx(i, j, total_cols)] = (rand() % 100 < 20) ? 1 : 0;  // 20% probabilidad de estar viva
+std::vector<int> initializeGliderBoard(int rows, int cols) {
+    std::vector<int> board(rows * cols, 0);
+    if (rows < 3 || cols < 3) return board;
+    board[idx(0, 1, cols)] = 1;
+    board[idx(1, 2, cols)] = 1;
+    board[idx(2, 0, cols)] = 1;
+    board[idx(2, 1, cols)] = 1;
+    board[idx(2, 2, cols)] = 1;
+    return board;
 }
 
-// ============================================================================
-// FUNCIÓN PARA COPIAR GRID USANDO OpenMP
-// ============================================================================
-void copy_grid(vector<int>& dest, const vector<int>& src, int local_rows, int cols) {
-    int total_cols = cols + 2;
-    // Directiva OpenMP para paralelizar el bucle anidado
-    // collapse(2) permite que OpenMP distribuya las iteraciones de ambos bucles
-    for (int i = 1; i <= local_rows; ++i)
-        for (int j = 1; j <= cols; ++j)
-            dest[idx(i, j, total_cols)] = src[idx(i, j, total_cols)];
-}
-
-// ============================================================================
-// FUNCIÓN PARA CALCULAR FILAS POR PROCESO (DISTRIBUCIÓN EQUITATIVA)
-// ============================================================================
-int get_rows_for_process(int rank, int total_rows, int size) {
-    int base_rows = total_rows / size;
-    int extra = total_rows % size;
-    return (rank < extra) ? base_rows + 1 : base_rows;
-}
-
-// ============================================================================
-// FUNCIÓN PARA RECOLECTAR Y MOSTRAR EL GRID GLOBAL (MEJORADA CON MPI_Gatherv)
-// ============================================================================
-void gather_and_print_global_grid(const vector<int>& local_grid, int local_rows, int cols, int total_cols, 
-                                 int rank, int size, int step, int total_rows) {
-    vector<int> global_grid;
-    vector<int> recvcounts(size);
-    vector<int> displs(size);
-    
-    // Solo el proceso 0 necesita el grid completo para mostrar
+// Visualización
+void print_global_grid(const std::vector<int>& local_grid, int local_rows, int cols, int total_cols, int rank, int size, int step, int total_rows) {
+    std::vector<int> global_grid;
+    std::vector<int> recvcounts(size), displs(size);
     if (rank == 0) {
         global_grid.resize(total_rows * cols);
-        
-        // Calcula cuántos datos recibe de cada proceso
-        int base_rows = total_rows / size;
-        int extra = total_rows % size;
-        int offset = 0;
-        
+        int base_rows = total_rows / size, extra = total_rows % size, offset = 0;
         for (int i = 0; i < size; ++i) {
             int rows_for_process = (i < extra) ? base_rows + 1 : base_rows;
             recvcounts[i] = rows_for_process * cols;
@@ -113,162 +68,238 @@ void gather_and_print_global_grid(const vector<int>& local_grid, int local_rows,
             offset += rows_for_process * cols;
         }
     }
-
-    // Prepara los datos locales para enviar (excluye las columnas de borde)
-    vector<int> sendbuf(local_rows * cols);
+    std::vector<int> sendbuf(local_rows * cols);
     for (int i = 1; i <= local_rows; ++i)
         for (int j = 1; j <= cols; ++j)
-            sendbuf[(i - 1) * cols + (j - 1)] = local_grid[idx(i, j, total_cols)];
-
-    // MPI_Gatherv recolecta diferentes cantidades de datos de cada proceso
-    MPI_Gatherv(sendbuf.data(), local_rows * cols, MPI_INT,
+            sendbuf[(i-1)*cols + (j-1)] = local_grid[idx(i, j, total_cols)];
+    MPI_Gatherv(sendbuf.data(), local_rows*cols, MPI_INT,
                 global_grid.data(), recvcounts.data(), displs.data(), MPI_INT,
                 0, MPI_COMM_WORLD);
-
-    // Solo el proceso 0 imprime el resultado
     if (rank == 0) {
-        //system("clear"); // Cambiar a "cls" en Windows 
-        cout << "\n=== Paso " << step << " ===" << endl;
+        std::cout << "\n=== Paso " << step << " ===\n";
         for (int i = 0; i < total_rows; ++i) {
-            for (int j = 0; j < cols; ++j) {
-                cout << (global_grid[i * cols + j] == ALIVE ? 'O' : '.');
-            }
-            cout << '\n';
+            for (int j = 0; j < cols; ++j)
+                std::cout << (global_grid[i*cols + j] == ALIVE ? 'O' : ' ');
+            std::cout << '\n';
         }
-        cout << flush;
-        usleep(200000); // Pausa de 200ms para visualización
+        std::cout << std::flush;
     }
 }
 
-// ============================================================================
-// FUNCIÓN PRINCIPAL
-// ============================================================================
-int main(int argc, char** argv) {
-    // Inicializa MPI
-    MPI_Init(&argc, &argv);
+// Conteo de vecinos
+int count_neighbors(const std::vector<int>& grid, int i, int j, int total_cols) {
+    int count = 0;
+    for (int dx = -1; dx <= 1; ++dx)
+        for (int dy = -1; dy <= 1; ++dy)
+            if (!(dx == 0 && dy == 0)) {
+                // Acceso directo a ghost rows/columns, que ya contienen la información toroidal
+                count += grid[idx(i + dx, j + dy, total_cols)];
+            }
+    return count;
+}
 
+// Copia de grilla
+void copy_grid(std::vector<int>& dest, const std::vector<int>& src, int local_rows, int cols, int total_cols) {
+    
+    for (int i = 1; i <= local_rows; ++i)
+        for (int j = 1; j <= cols; ++j)
+            dest[idx(i, j, total_cols)] = src[idx(i, j, total_cols)];
+}
+
+// Cálculo de filas por proceso
+int get_rows_for_process(int rank, int total_rows, int size) {
+    int base_rows = total_rows / size, extra = total_rows % size;
+    return (rank < extra) ? base_rows + 1 : base_rows;
+}
+
+void print_local_debug(const std::vector<int>& grid, int local_rows, int cols, int total_cols, int rank, int step) {
+    std::cout << "[DEBUG] Proceso " << rank << ", paso " << step << ":\n";
+    for (int i = 0; i < local_rows + 2; ++i) {
+        for (int j = 0; j < cols + 2; ++j) {
+            std::cout << (grid[idx(i, j, total_cols)] == ALIVE ? 'O' : (grid[idx(i, j, total_cols)] == DEAD ? '.' : '?'));
+        }
+        std::cout << "\n";
+    }
+    std::cout << std::flush;
+}
+
+int main(int argc, char** argv) {
+    // I. Inicializar entorno distribuido
+    MPI_Init(&argc, &argv);
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    int rows = 10, cols = 10, steps = 10;
+    // II. Parsear argumentos
+    int rows = 10, cols = 10, steps = 10, num_threads = 0;
     bool print = false;
-    
-    // Parsea argumentos de línea de comandos
+    bool anim = false;
+    std::string savefile = "";
+    double prob = 0.2;
+    int seed = 42;
+    bool debug = false;
+    std::string preset = "";
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--print") {
-            print = true;
-        } else if (arg == "--threads" && i + 1 < argc) {
-            i++;  // Saltar el siguiente argumento
-        } else if (i + 2 < argc) {
-            rows = std::stoi(argv[i]);
-            cols = std::stoi(argv[i+1]);
-            steps = std::stoi(argv[i+2]);
-            i += 2;
-        }
+        if (arg == "--print") print = true;
+        else if (arg == "--anim") anim = true;
+        else if (arg == "--threads" && i+1 < argc) { num_threads = std::stoi(argv[++i]); }
+        else if (arg == "--preset" && i+1 < argc) { preset = argv[++i]; }
+        else if (arg == "--save" && i+1 < argc) { savefile = argv[++i]; }
+        else if (arg == "--prob" && i+1 < argc) { prob = std::stod(argv[++i]); }
+        else if (arg == "--seed" && i+1 < argc) { seed = std::stoi(argv[++i]); }
+        else if (arg == "--debug") debug = true;
+        else if (i+2 < argc) { rows = std::stoi(argv[i]); cols = std::stoi(argv[i+1]); steps = std::stoi(argv[i+2]); i += 2; }
     }
-    
-    // Distribución equitativa de filas
+
+    // III. Verificar parámetros
+    if (rows < size || cols < 1 || steps < 1) {
+        if (rank == 0) std::cerr << "Error: parámetros insuficientes." << std::endl;
+        MPI_Finalize(); return 1;
+    }
+
+    // V. Determinar filas locales
     int local_rows = get_rows_for_process(rank, rows, size);
     int total_cols = cols + 2;
     int total_rows = local_rows + 2;
+    int global_row_offset = 0;
+    for (int i = 0; i < rank; ++i) global_row_offset += get_rows_for_process(i, rows, size);
 
-    vector<int> current(total_rows * total_cols, DEAD);
-    vector<int> next(total_rows * total_cols, DEAD);
-    initialize_grid(current, local_rows, cols, rank);
+    // VI. Reservar espacio para grillas
+    std::vector<int> current(total_rows * total_cols, DEAD);
+    std::vector<int> next(total_rows * total_cols, DEAD);
 
+    // VII. Inicializar grilla (ahora global y coherente)
+    std::vector<int> global_board;
+    if (rank == 0) {
+        if (preset == "glider") {
+            global_board = initializeGliderBoard(rows, cols);
+        } else {
+            global_board = initializeBoard(rows, cols, prob, seed);
+        }
+    }
+    // Cada proceso recibe su bloque de filas (local_rows * cols)
+    std::vector<int> local_block(local_rows * cols, 0);
+    MPI_Scatter(
+        global_board.data(), local_rows * cols, MPI_INT,
+        local_block.data(), local_rows * cols, MPI_INT,
+        0, MPI_COMM_WORLD
+    );
+    // Ahora copio local_block a la grilla local (con halo)
+    for (int i = 1; i <= local_rows; ++i)
+        for (int j = 1; j <= cols; ++j)
+            current[idx(i, j, total_cols)] = local_block[(i - 1) * cols + (j - 1)];
+
+    // VIII-IX. Determinar vecinos
     int up = (rank - 1 + size) % size;
     int down = (rank + 1) % size;
 
-    // Sincronización antes de comenzar la medición de tiempo
+    // Sincronización antes de medir tiempo
     MPI_Barrier(MPI_COMM_WORLD);
     double t0 = MPI_Wtime();
-    
+
+    // X. Simulación
     for (int step = 0; step < steps; ++step) {
-        // ========================================================================
-        // FASE 1: COMUNICACIÓN NO BLOQUEANTE - INTERCAMBIO DE BORDES
-        // ========================================================================
-        MPI_Request requests[4];
-        MPI_Status statuses[4];
-        
-        // Inicia comunicación no bloqueante
-        MPI_Isend(&current[idx(1, 1, total_cols)], cols, MPI_INT, up, 0, MPI_COMM_WORLD, &requests[0]);
-        MPI_Irecv(&current[idx(local_rows + 1, 1, total_cols)], cols, MPI_INT, down, 0, MPI_COMM_WORLD, &requests[1]);
-        MPI_Isend(&current[idx(local_rows, 1, total_cols)], cols, MPI_INT, down, 1, MPI_COMM_WORLD, &requests[2]);
-        MPI_Irecv(&current[idx(0, 1, total_cols)], cols, MPI_INT, up, 1, MPI_COMM_WORLD, &requests[3]);
-
-        // ========================================================================
-        // FASE 2: APLICACIÓN DE CONDICIONES DE FRONTERA PERIÓDICAS
-        // ========================================================================
-        // Copia las columnas de borde para simular condiciones periódicas
-        for (int i = 0; i <= local_rows + 1; ++i) {
-            current[idx(i, 0, total_cols)] = current[idx(i, cols, total_cols)];        // Borde izquierdo = borde derecho
-            current[idx(i, cols + 1, total_cols)] = current[idx(i, 1, total_cols)];    // Borde derecho = borde izquierdo
+        if (anim) {
+            clearScreen();
+            print_global_grid(current, local_rows, cols, total_cols, rank, size, step, rows);
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        } else if (print) {
+            print_global_grid(current, local_rows, cols, total_cols, rank, size, step, rows);
         }
 
-        // ========================================================================
-        // FASE 3: CÁLCULO DE FILAS INTERNAS (NO DEPENDEN DE COMUNICACIÓN)
-        // ========================================================================
-        // Calcula las filas internas que no requieren las filas fantasma
-        for (int i = 2; i < local_rows; ++i) {
+        // XA. Ghost rows (comunicación)
+        MPI_Request reqs[4];
+        MPI_Isend(&current[idx(1, 1, total_cols)], cols, MPI_INT, up, 0, MPI_COMM_WORLD, &reqs[0]);
+        MPI_Irecv(&current[idx(local_rows+1, 1, total_cols)], cols, MPI_INT, down, 0, MPI_COMM_WORLD, &reqs[1]);
+        MPI_Isend(&current[idx(local_rows, 1, total_cols)], cols, MPI_INT, down, 1, MPI_COMM_WORLD, &reqs[2]);
+        MPI_Irecv(&current[idx(0, 1, total_cols)], cols, MPI_INT, up, 1, MPI_COMM_WORLD, &reqs[3]);
+
+        // Esperar comunicación antes de calcular filas de borde
+        MPI_Waitall(4, reqs, MPI_STATUSES_IGNORE);
+
+        // XB. Ghost columns (periódicas) - MOVER AQUÍ
+       
+        for (int i = 0; i <= local_rows+1; ++i) {
+            current[idx(i, 0, total_cols)] = current[idx(i, cols, total_cols)];
+            current[idx(i, cols+1, total_cols)] = current[idx(i, 1, total_cols)];
+        }
+
+        // Depuración: imprimir subtablero local con ghost rows/columns
+        if (debug) {
+            MPI_Barrier(MPI_COMM_WORLD);
+            print_local_debug(current, local_rows, cols, total_cols, rank, step);
+            MPI_Barrier(MPI_COMM_WORLD);
+        }
+
+        // XC. Visualización
+        if (print) print_global_grid(current, local_rows, cols, total_cols, rank, size, step, rows);
+
+        // XD. Cálculo de la siguiente generación
+       
+        for (int i = 1; i <= local_rows; ++i) {
             for (int j = 1; j <= cols; ++j) {
                 int alive_neighbors = count_neighbors(current, i, j, total_cols);
                 int& cell = next[idx(i, j, total_cols)];
-                if (current[idx(i, j, total_cols)] == ALIVE) {
+                if (current[idx(i, j, total_cols)] == ALIVE)
                     cell = (alive_neighbors == 2 || alive_neighbors == 3) ? ALIVE : DEAD;
-                } else {
+                else
                     cell = (alive_neighbors == 3) ? ALIVE : DEAD;
-                }
             }
         }
 
-        // ========================================================================
-        // FASE 4: ESPERA FINALIZACIÓN DE COMUNICACIÓN Y CALCULA FILAS DE BORDE
-        // ========================================================================
-        MPI_Waitall(4, requests, statuses);
-
-        // Calcula las filas de borde que requieren las filas fantasma
-        for (int i = 1; i <= 1; ++i) {  // Primera fila
-            for (int j = 1; j <= cols; ++j) {
-                int alive_neighbors = count_neighbors(current, i, j, total_cols);
-                int& cell = next[idx(i, j, total_cols)];
-                if (current[idx(i, j, total_cols)] == ALIVE) {
-                    cell = (alive_neighbors == 2 || alive_neighbors == 3) ? ALIVE : DEAD;
-                } else {
-                    cell = (alive_neighbors == 3) ? ALIVE : DEAD;
-                }
-            }
-        }
-        for (int i = local_rows; i <= local_rows; ++i) {  // Última fila
-            for (int j = 1; j <= cols; ++j) {
-                int alive_neighbors = count_neighbors(current, i, j, total_cols);
-                int& cell = next[idx(i, j, total_cols)];
-                if (current[idx(i, j, total_cols)] == ALIVE) {
-                    cell = (alive_neighbors == 2 || alive_neighbors == 3) ? ALIVE : DEAD;
-                } else {
-                    cell = (alive_neighbors == 3) ? ALIVE : DEAD;
-                }
-            }
-        }
-
-        // ========================================================================
-        // FASE 5: ACTUALIZACIÓN Y VISUALIZACIÓN
-        // ========================================================================
-        // Copia el grid de la siguiente generación al grid actual
-        copy_grid(current, next, local_rows, cols);
-        if (print) gather_and_print_global_grid(current, local_rows, cols, total_cols, rank, size, step, rows);
+        // XE. Copiar next a current
+        copy_grid(current, next, local_rows, cols, total_cols);
     }
-    
-    // Sincronización antes de finalizar la medición de tiempo
+
+    // Recolectar la última generación en el proceso 0 SOLO si se usa --save
+    if (!savefile.empty()) {
+        std::vector<int> global_grid;
+        std::vector<int> recvcounts(size), displs(size);
+        if (rank == 0) {
+            global_grid.resize(rows * cols);
+            int base_rows = rows / size, extra = rows % size, offset = 0;
+            for (int i = 0; i < size; ++i) {
+                int rows_for_process = (i < extra) ? base_rows + 1 : base_rows;
+                recvcounts[i] = rows_for_process * cols;
+                displs[i] = offset;
+                offset += rows_for_process * cols;
+            }
+            // Depuración: imprimir recvcounts y displs
+            std::cout << "[DEBUG] recvcounts: ";
+            for (int i = 0; i < size; ++i) std::cout << recvcounts[i] << " ";
+            std::cout << "\n[DEBUG] displs: ";
+            for (int i = 0; i < size; ++i) std::cout << displs[i] << " ";
+            std::cout << std::endl;
+            std::cout << "[DEBUG] global_grid size: " << global_grid.size() << std::endl;
+        }
+        std::vector<int> sendbuf(local_rows * cols);
+        for (int i = 1; i <= local_rows; ++i)
+            for (int j = 1; j <= cols; ++j)
+                sendbuf[(i-1)*cols + (j-1)] = current[idx(i, j, total_cols)];
+        MPI_Gatherv(sendbuf.data(), local_rows*cols, MPI_INT,
+                    global_grid.data(), recvcounts.data(), displs.data(), MPI_INT,
+                    0, MPI_COMM_WORLD);
+        if (rank == 0) {
+            std::ofstream fout(savefile);
+            for (int i = 0; i < rows; ++i) {
+                for (int j = 0; j < cols; ++j)
+                    fout << (global_grid[i*cols + j] ? 'O' : ' ');
+                fout << '\n';
+            }
+            fout.close();
+        }
+    }
+
+    // Sincronización y tiempo final
     MPI_Barrier(MPI_COMM_WORLD);
     double t1 = MPI_Wtime();
-    
     if (rank == 0) {
         std::cout << "Tiempo de simulación: " << (t1-t0) << " segundos\n";
-        std::cout << "Configuración: " << size << " procesos MPI, " << 0 << " hilos OpenMP por proceso\n";
     }
-    
+
+    // XI. Liberar estructuras (automático por vector)
+    // XII. Finalizar entorno distribuido
     MPI_Finalize();
     return 0;
 }
