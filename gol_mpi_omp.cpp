@@ -1,6 +1,5 @@
 // ============================================================================
-// JUEGO DE LA VIDA - IMPLEMENTACIÓN HÍBRIDA MPI + OpenMP (ESTRUCTURA DIDÁCTICA)
-// Basado en el pseudocódigo proporcionado
+// JUEGO DE LA VIDA - IMPLEMENTACIÓN HÍBRIDA MPI + OpenMP 
 // ============================================================================
 #include <mpi.h>
 #include <omp.h>
@@ -9,30 +8,57 @@
 #include <string>
 #include <unistd.h>
 #include <fstream>
+#include <random>
+#include <thread>
+#include <chrono>
 
 #define ALIVE 1
 #define DEAD  0
 #define SEED 42
 
-using namespace std;
-
 // Función auxiliar para índice 1D
 int idx(int i, int j, int cols) { return i * cols + j; }
 
-// Inicialización determinista
-void initialize_grid(vector<int>& grid, int local_rows, int cols, int total_cols, int global_row_offset) {
-    for (int i = 1; i <= local_rows; ++i)
-        for (int j = 1; j <= cols; ++j) {
-            int global_i = global_row_offset + (i - 1);
-            int hash = (global_i * 31 + (j-1) * 17 + SEED) % 100;
-            grid[idx(i, j, total_cols)] = (hash < 20) ? ALIVE : DEAD;
-        }
+// ============================================================================
+// FUNCIÓN PARA LIMPIAR LA CONSOLA (ANIMACIÓN)
+// ============================================================================
+void clearScreen() {
+    // ANSI escape code para limpiar pantalla y mover cursor al inicio
+    std::cout << "\033[2J\033[H";
+}
+
+// ============================================================================
+// FUNCIÓN PARA INICIALIZAR EL TABLERO CON PATRÓN ALEATORIO ESTÁNDAR (GLOBAL)
+// ============================================================================
+// Esta función solo se usa en el proceso raíz para inicializar el tablero global
+std::vector<int> initializeBoard(int rows, int cols, double prob = 0.2, int seed = 42) {
+    std::vector<int> board(rows * cols, 0);
+    std::mt19937 gen(seed);
+    std::bernoulli_distribution dist(prob);
+    for (int i = 0; i < rows; ++i)
+        for (int j = 0; j < cols; ++j)
+            board[i * cols + j] = dist(gen) ? 1 : 0;
+    return board;
+}
+
+// ============================================================================
+// FUNCIÓN PARA INICIALIZAR UN GLIDER EN LA ESQUINA SUPERIOR IZQUIERDA
+// ============================================================================
+std::vector<int> initializeGliderBoard(int rows, int cols) {
+    std::vector<int> board(rows * cols, 0);
+    if (rows < 3 || cols < 3) return board;
+    board[idx(0, 1, cols)] = 1;
+    board[idx(1, 2, cols)] = 1;
+    board[idx(2, 0, cols)] = 1;
+    board[idx(2, 1, cols)] = 1;
+    board[idx(2, 2, cols)] = 1;
+    return board;
 }
 
 // Visualización
-void print_global_grid(const vector<int>& local_grid, int local_rows, int cols, int total_cols, int rank, int size, int step, int total_rows) {
-    vector<int> global_grid;
-    vector<int> recvcounts(size), displs(size);
+void print_global_grid(const std::vector<int>& local_grid, int local_rows, int cols, int total_cols, int rank, int size, int step, int total_rows) {
+    std::vector<int> global_grid;
+    std::vector<int> recvcounts(size), displs(size);
     if (rank == 0) {
         global_grid.resize(total_rows * cols);
         int base_rows = total_rows / size, extra = total_rows % size, offset = 0;
@@ -43,7 +69,7 @@ void print_global_grid(const vector<int>& local_grid, int local_rows, int cols, 
             offset += rows_for_process * cols;
         }
     }
-    vector<int> sendbuf(local_rows * cols);
+    std::vector<int> sendbuf(local_rows * cols);
     for (int i = 1; i <= local_rows; ++i)
         for (int j = 1; j <= cols; ++j)
             sendbuf[(i-1)*cols + (j-1)] = local_grid[idx(i, j, total_cols)];
@@ -51,18 +77,18 @@ void print_global_grid(const vector<int>& local_grid, int local_rows, int cols, 
                 global_grid.data(), recvcounts.data(), displs.data(), MPI_INT,
                 0, MPI_COMM_WORLD);
     if (rank == 0) {
-        cout << "\n=== Paso " << step << " ===\n";
+        std::cout << "\n=== Paso " << step << " ===\n";
         for (int i = 0; i < total_rows; ++i) {
             for (int j = 0; j < cols; ++j)
-                cout << (global_grid[i*cols + j] == ALIVE ? 'O' : ' ');
-            cout << '\n';
+                std::cout << (global_grid[i*cols + j] == ALIVE ? 'O' : ' ');
+            std::cout << '\n';
         }
-        cout << flush;
+        std::cout << std::flush;
     }
 }
 
 // Conteo de vecinos
-int count_neighbors(const vector<int>& grid, int i, int j, int total_cols) {
+int count_neighbors(const std::vector<int>& grid, int i, int j, int total_cols) {
     int count = 0;
     for (int dx = -1; dx <= 1; ++dx)
         for (int dy = -1; dy <= 1; ++dy)
@@ -74,7 +100,7 @@ int count_neighbors(const vector<int>& grid, int i, int j, int total_cols) {
 }
 
 // Copia de grilla
-void copy_grid(vector<int>& dest, const vector<int>& src, int local_rows, int cols, int total_cols) {
+void copy_grid(std::vector<int>& dest, const std::vector<int>& src, int local_rows, int cols, int total_cols) {
     #pragma omp parallel for collapse(2)
     for (int i = 1; i <= local_rows; ++i)
         for (int j = 1; j <= cols; ++j)
@@ -87,15 +113,15 @@ int get_rows_for_process(int rank, int total_rows, int size) {
     return (rank < extra) ? base_rows + 1 : base_rows;
 }
 
-void print_local_debug(const vector<int>& grid, int local_rows, int cols, int total_cols, int rank, int step) {
-    cout << "[DEBUG] Proceso " << rank << ", paso " << step << ":\n";
+void print_local_debug(const std::vector<int>& grid, int local_rows, int cols, int total_cols, int rank, int step) {
+    std::cout << "[DEBUG] Proceso " << rank << ", paso " << step << ":\n";
     for (int i = 0; i < local_rows + 2; ++i) {
         for (int j = 0; j < cols + 2; ++j) {
-            cout << (grid[idx(i, j, total_cols)] == ALIVE ? 'O' : (grid[idx(i, j, total_cols)] == DEAD ? '.' : '?'));
+            std::cout << (grid[idx(i, j, total_cols)] == ALIVE ? 'O' : (grid[idx(i, j, total_cols)] == DEAD ? '.' : '?'));
         }
-        cout << "\n";
+        std::cout << "\n";
     }
-    cout << flush;
+    std::cout << std::flush;
 }
 
 int main(int argc, char** argv) {
@@ -108,21 +134,39 @@ int main(int argc, char** argv) {
     // II. Parsear argumentos
     int rows = 10, cols = 10, steps = 10, num_threads = 0;
     bool print = false;
+    bool anim = false;
     std::string savefile = "";
+    double prob = 0.2;
+    int seed = 42;
     bool debug = false;
+    std::string preset = "";
     for (int i = 1; i < argc; ++i) {
-        string arg = argv[i];
+        std::string arg = argv[i];
         if (arg == "--print") print = true;
-        else if (arg == "--threads" && i+1 < argc) { num_threads = stoi(argv[++i]); }
+        else if (arg == "--anim") anim = true;
+        else if (arg == "--threads" && i+1 < argc) { num_threads = std::stoi(argv[++i]); }
+        else if (arg == "--preset" && i+1 < argc) { preset = argv[++i]; }
         else if (arg == "--save" && i+1 < argc) { savefile = argv[++i]; }
+        else if (arg == "--prob" && i+1 < argc) { prob = std::stod(argv[++i]); }
+        else if (arg == "--seed" && i+1 < argc) { seed = std::stoi(argv[++i]); }
         else if (arg == "--debug") debug = true;
-        else if (i+2 < argc) { rows = stoi(argv[i]); cols = stoi(argv[i+1]); steps = stoi(argv[i+2]); i += 2; }
+        else if (i+2 < argc) { rows = std::stoi(argv[i]); cols = std::stoi(argv[i+1]); steps = std::stoi(argv[i+2]); i += 2; }
     }
-    if (num_threads > 0) omp_set_num_threads(num_threads);
+
+    // Configuración de hilos OpenMP
+    if (num_threads > 0) {
+        omp_set_num_threads(num_threads);
+        if (rank == 0) std::cout << "Configurados " << num_threads << " hilos OpenMP\n";
+    } else {
+        if (getenv("OMP_NUM_THREADS") == nullptr) {
+            omp_set_num_threads(omp_get_max_threads());
+        }
+        if (rank == 0) std::cout << "Usando " << omp_get_max_threads() << " hilos OpenMP (por defecto)\n";
+    }
 
     // III. Verificar parámetros
     if (rows < size || cols < 1 || steps < 1) {
-        if (rank == 0) cerr << "Error: parámetros insuficientes." << endl;
+        if (rank == 0) std::cerr << "Error: parámetros insuficientes." << std::endl;
         MPI_Finalize(); return 1;
     }
 
@@ -134,11 +178,29 @@ int main(int argc, char** argv) {
     for (int i = 0; i < rank; ++i) global_row_offset += get_rows_for_process(i, rows, size);
 
     // VI. Reservar espacio para grillas
-    vector<int> current(total_rows * total_cols, DEAD);
-    vector<int> next(total_rows * total_cols, DEAD);
+    std::vector<int> current(total_rows * total_cols, DEAD);
+    std::vector<int> next(total_rows * total_cols, DEAD);
 
-    // VII. Inicializar grilla (determinista)
-    initialize_grid(current, local_rows, cols, total_cols, global_row_offset);
+    // VII. Inicializar grilla (ahora global y coherente)
+    std::vector<int> global_board;
+    if (rank == 0) {
+        if (preset == "glider") {
+            global_board = initializeGliderBoard(rows, cols);
+        } else {
+            global_board = initializeBoard(rows, cols, prob, seed);
+        }
+    }
+    // Cada proceso recibe su bloque de filas (local_rows * cols)
+    std::vector<int> local_block(local_rows * cols, 0);
+    MPI_Scatter(
+        global_board.data(), local_rows * cols, MPI_INT,
+        local_block.data(), local_rows * cols, MPI_INT,
+        0, MPI_COMM_WORLD
+    );
+    // Ahora copio local_block a la grilla local (con halo)
+    for (int i = 1; i <= local_rows; ++i)
+        for (int j = 1; j <= cols; ++j)
+            current[idx(i, j, total_cols)] = local_block[(i - 1) * cols + (j - 1)];
 
     // VIII-IX. Determinar vecinos
     int up = (rank - 1 + size) % size;
@@ -150,6 +212,14 @@ int main(int argc, char** argv) {
 
     // X. Simulación
     for (int step = 0; step < steps; ++step) {
+        if (anim) {
+            clearScreen();
+            print_global_grid(current, local_rows, cols, total_cols, rank, size, step, rows);
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        } else if (print) {
+            print_global_grid(current, local_rows, cols, total_cols, rank, size, step, rows);
+        }
+
         // XA. Ghost rows (comunicación)
         MPI_Request reqs[4];
         MPI_Isend(&current[idx(1, 1, total_cols)], cols, MPI_INT, up, 0, MPI_COMM_WORLD, &reqs[0]);
@@ -196,8 +266,8 @@ int main(int argc, char** argv) {
 
     // Recolectar la última generación en el proceso 0 SOLO si se usa --save
     if (!savefile.empty()) {
-        vector<int> global_grid;
-        vector<int> recvcounts(size), displs(size);
+        std::vector<int> global_grid;
+        std::vector<int> recvcounts(size), displs(size);
         if (rank == 0) {
             global_grid.resize(rows * cols);
             int base_rows = rows / size, extra = rows % size, offset = 0;
@@ -215,7 +285,7 @@ int main(int argc, char** argv) {
             std::cout << std::endl;
             std::cout << "[DEBUG] global_grid size: " << global_grid.size() << std::endl;
         }
-        vector<int> sendbuf(local_rows * cols);
+        std::vector<int> sendbuf(local_rows * cols);
         for (int i = 1; i <= local_rows; ++i)
             for (int j = 1; j <= cols; ++j)
                 sendbuf[(i-1)*cols + (j-1)] = current[idx(i, j, total_cols)];
@@ -237,8 +307,8 @@ int main(int argc, char** argv) {
     MPI_Barrier(MPI_COMM_WORLD);
     double t1 = MPI_Wtime();
     if (rank == 0) {
-        cout << "Tiempo de simulación: " << (t1-t0) << " segundos\n";
-        cout << "Configuración: " << size << " procesos MPI, " << omp_get_max_threads() << " hilos OpenMP por proceso\n";
+        std::cout << "Tiempo de simulación: " << (t1-t0) << " segundos\n";
+        std::cout << "Configuración: " << size << " procesos MPI, " << omp_get_max_threads() << " hilos OpenMP por proceso\n";
     }
 
     // XI. Liberar estructuras (automático por vector)
